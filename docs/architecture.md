@@ -10,12 +10,16 @@ Three coordinate spaces:
 | global | KWin's coordinate space across all outputs |
 | screen | one output's local pixels; `global - output.geometry.topLeft` |
 
-One camera: `view` is the canvas point at global (0,0), and `zoom` is the
-scale.
+One camera and one target. `view` is the canvas point the camera puts at
+global (0,0), and `zoom` is its scale. `target` is the canvas point that will
+be at global (0,0) after apply; the monitor frames are drawn at
+`target + output.geometry` for every output, so they keep KDE's layout and
+move as a rigid group. While the canvas is closed, `view == target`.
 
 ```
 global = (canvas - view) * zoom
 canvas = view + global / zoom
+frame after apply = canvas - target
 ```
 
 At 1:1, `zoom` is 1 and a window at canvas `c` has KWin frame geometry
@@ -53,11 +57,16 @@ view  = c - anchor / zoom
 Dragging a thumbnail edits the entry in canvas units. Nothing touches KWin
 geometry while the canvas is open.
 
-**Commit.** `commit()` snaps `zoom` to 1 anchored at the cursor, then writes
-`frameGeometry = entry - view` for every entry. Windows not shown (other
-desktops) share the plane, so they are shifted by `entryView - view`. Then the
-ground offset is published and the effect hides. `cancel()` restores
-`entryView` and hides without writing anything.
+Dragging a frame's name tag or edge band changes `target`. The camera is
+never involved in what gets applied.
+
+**Commit.** `commit()` writes `frameGeometry = entry - target` for every
+entry. Windows not shown (other desktops) share the plane, so they are shifted
+by `entryView - target`. The camera is set to `target` at zoom 1 so the
+1:1 view matches, the ground offset is published, and the effect hides.
+`pick()` first centres the active screen's frame on the window if no frame
+already contains it. `cancel()` restores `entryView` and hides without
+writing anything.
 
 ## Why the ground has to be drawn twice
 

@@ -3,8 +3,11 @@
 An infinite canvas for KDE Plasma, built on KWin's public scripting API. No
 patches, no forked compositor, no plugin against private headers.
 
-Windows live on an unbounded plane. The screen is a 1:1 viewport onto it. At
-1:1 nothing is running: every window is an ordinary KWin window at an ordinary
+Windows live on an unbounded plane. The screen is a 1:1 viewport onto it, and
+while the canvas is open the viewport is drawn as **monitor frames**: outlined
+rectangles, one per output, in the layout KDE knows, each with its name. Drag
+windows into a frame or drag the frames over a cluster of windows, press Enter,
+and that is what the real screens show. At 1:1 nothing is running: every window is an ordinary KWin window at an ordinary
 position, some of them off-screen, and KWin handles input, popups, XWayland and
 focus exactly as it always does. Open the canvas to zoom out, pan, rearrange
 and pick; close it and the new layout is written back as plain window geometry.
@@ -44,10 +47,12 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | drag on ground, Space+drag, or middle-drag | | pan |
 | wheel | | zoom at the cursor |
 | drag a window | | move it on the plane |
-| click a window | | apply, close, focus it |
+| drag a frame's tag or edge | | move the monitor frames (all together) |
+| click a window | | apply with it on screen, focus it |
 | Enter | | apply and close |
 | Esc | | cancel, nothing moves |
-| Home / 0 | | origin |
+| Home | | look through the frames |
+| 0 | | canvas origin |
 | F / W | | zoom to fit |
 
 Activating an off-screen window from the task manager pans the plane so it
