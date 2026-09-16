@@ -321,7 +321,16 @@ KWin.SceneEffect {
         id: view
         readonly property rect sg: KWin.SceneView.screen.geometry
         property bool spaceHeld: false
+        // Number of thumbnails currently under the pointer. The pan handler
+        // refuses a left press while this is non-zero, so a drag that starts on
+        // a window moves the window instead of racing the pan.
+        property int hoverCount: 0
+        readonly property bool overWindow: hoverCount > 0
         focus: true
+        Connections {
+            target: effect
+            function onVisibleChanged() { if (effect.visible) view.hoverCount = 0; }
+        }
 
         Ground {
             anchors.fill: parent
@@ -342,7 +351,7 @@ KWin.SceneEffect {
         DragHandler {
             id: panDrag
             target: null
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+            acceptedButtons: (view.spaceHeld || !view.overWindow) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
             cursorShape: active ? Qt.ClosedHandCursor : (view.spaceHeld ? Qt.OpenHandCursor : Qt.ArrowCursor)
             property point last: Qt.point(0, 0)
             onActiveChanged: last = Qt.point(0, 0)
@@ -403,7 +412,11 @@ KWin.SceneEffect {
                     styleColor: "#000000"
                 }
 
-                HoverHandler { id: hover }
+                HoverHandler {
+                    id: hover
+                    onHoveredChanged: view.hoverCount += hovered ? 1 : -1
+                    Component.onDestruction: if (hovered) view.hoverCount -= 1
+                }
 
                 DragHandler {
                     id: winDrag
