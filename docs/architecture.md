@@ -46,9 +46,10 @@ per-frame work. Two things happen in this state:
 - `Meta+Space` opens the canvas.
 
 **Open.** `open()` sets `zoom = 1`, records `entryView` and a copy of the
-targets, and snapshots every canvas window on every desktop in stacking order
+targets, snapshots every canvas window on every desktop in stacking order
 into `entries[] = {window, desktop, x, y, width, height}` with
-`x = frame.x + target(desktop).x` and so on. The per-screen delegate draws the ground and one live `WindowThumbnail`
+`x = frame.x + target(desktop).x` and so on, then moves the camera to the
+configured opening view (`OpenZoom`, default fit-everything). The per-screen delegate draws the ground and one live `WindowThumbnail`
 per entry at `(entry - view) * zoom - screen.topLeft`. Pan changes `view`.
 Zoom changes `zoom` and `view` together so the canvas point under the anchor
 stays put:
@@ -153,6 +154,15 @@ frame reads as a sheet even with no background window, as in the nest.
 `DesktopBackground` with an empty `activity` crashes KWin 6.7 when activities
 are disabled (null dereference in `updateWindow`), so the effect always
 passes a non-empty activity.
+
+## Keys
+
+All keys come from config. The global chords are `ShortcutHandler` sequences
+(`ToggleShortcut`, `HomeShortcut`). The keys the open canvas listens for are
+comma-separated Qt key names (`KeyApply` = `Return,Enter` and so on), parsed
+into key codes at load and on every reconfigure by looking up `Qt["Key_" +
+name]`, and the legend is rendered from the same entries. A misspelt name is
+logged and skipped.
 
 ## Known limits
 

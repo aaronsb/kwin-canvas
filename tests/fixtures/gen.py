@@ -57,7 +57,7 @@ def wallpaper(path, tint=(0.60, 0.50, 0.85), label="1", w=1920, h=1080):
     d.text((w / 2 - 260, h / 2 - 30), "kwin-canvas fixture", fill=(255, 255, 255), font=f)
     big = font(220)
     d.text((w / 2 - 70, h * 0.66), label, fill=(255, 255, 255), font=big)
-    img.save(path)
+    save_if_changed(img, path)
 
 
 def tile(path, n=256):
@@ -69,24 +69,50 @@ def tile(path, n=256):
     d.ellipse((n // 2 - 4, n // 2 - 4, n // 2 + 4, n // 2 + 4), fill=(127, 143, 176))
     d.line((0, 0, n - 1, 0), fill=(60, 66, 80))
     d.line((0, 0, 0, n - 1), fill=(60, 66, 80))
-    img.save(path)
+    save_if_changed(img, path)
+
+
+def write_if_changed(path, data):
+    """Leave mtime alone when the content is already right, so an editor
+    holding the file open does not see it change under it."""
+    mode = "rb" if isinstance(data, bytes) else "r"
+    if os.path.exists(path):
+        with open(path, mode) as fh:
+            if fh.read() == data:
+                return
+    with open(path, "wb" if isinstance(data, bytes) else "w") as fh:
+        fh.write(data)
 
 
 def texts():
-    with open(os.path.join(HERE, "sample.txt"), "w") as fh:
-        fh.write("kwin-canvas fixture text\n")
-        fh.write("=" * 40 + "\n\n")
-        for i in range(1, 41):
-            fh.write(f"line {i:02d}  the quick brown fox jumps over the lazy dog\n")
-    with open(os.path.join(HERE, "konsole.txt"), "w") as fh:
-        fh.write("kwin-canvas fixture konsole\n")
-        for i in range(1, 25):
-            fh.write(f"{i:02d}  " + "#" * (i * 2) + "\n")
+    sample = "kwin-canvas fixture text\n" + "=" * 40 + "\n\n"
+    for i in range(1, 41):
+        sample += f"line {i:02d}  the quick brown fox jumps over the lazy dog\n"
+    write_if_changed(os.path.join(HERE, "sample.txt"), sample)
+    konsole = "kwin-canvas fixture konsole\n"
+    for i in range(1, 25):
+        konsole += f"{i:02d}  " + "#" * (i * 2) + "\n"
+    write_if_changed(os.path.join(HERE, "konsole.txt"), konsole)
+
+
+def save_if_changed(img, path):
+    import io
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    write_if_changed(path, buf.getvalue())
+
+
+def cleanup():
+    """Editor swap files left by a killed nest."""
+    for name in os.listdir(HERE):
+        if name.endswith(".kate-swp") or name.endswith(".swp"):
+            os.remove(os.path.join(HERE, name))
 
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else HERE
     os.makedirs(out, exist_ok=True)
+    cleanup()
     for label, tint in SPACES:
         wallpaper(os.path.join(out, f"wallpaper-{label}.png"), tint, label)
     wallpaper(os.path.join(out, "wallpaper.png"), *SPACES[0][1:], SPACES[0][0])

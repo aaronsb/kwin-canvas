@@ -1,6 +1,6 @@
 scenario_desc="desktops are frame groups; a window in another desktop's frame moves there"
 run_scenario() {
-    c open
+    open_1to1
     c "adddesktop 0"
     sleep 0.6
     c state
@@ -16,7 +16,7 @@ run_scenario() {
     c "desktop 1"
     assert_near "view follows desktop" "$(sget viewx)" "$tx" 0.5
     c "desktop 0"
-    c open
+    open_1to1
     c "placeby KCalc 100 120"
     c commit
     assert_eq "KCalc back on desktop 1" "$(eget KCalc desktop)" "$(tget 0 name)"

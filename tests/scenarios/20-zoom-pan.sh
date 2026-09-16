@@ -1,6 +1,6 @@
 scenario_desc="cursor-anchored zoom, pan, and zoom to fit"
 run_scenario() {
-    c open
+    open_1to1
     c "zoom 0.4 960 540"
     assert_near "zoom" "$(sget zoom)" 0.4 0.001
     assert_near "view x after zoom" "$(sget viewx)" -1440 1

@@ -1,11 +1,11 @@
 scenario_desc="apply writes canvas minus the frame target as window geometry; the camera is not involved"
 run_scenario() {
-    c open
+    open_1to1
     c "pan -500 -300"
     c commit
     assert_eq "pan alone moves nothing: KCalc frame x" "$(eget KCalc fx)" 100
     assert_near "camera returned to the frames" "$(sget viewx)" 0 0.5
-    c open
+    open_1to1
     c "frames 500 300"
     c commit
     assert_eq "visible" "$(sget visible)" false

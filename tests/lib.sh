@@ -109,6 +109,9 @@ snap() {
     fi
 }
 
+# Open and put the camera at 1:1 on the current desktop's frames, whatever OpenZoom is.
+open_1to1() { c open; c home; }
+
 # ---- fixture layout ---------------------------------------------------------
 # A fixed arrangement of the fixture windows in canvas units. Everything
 # assumes the current desktop's target is (0,0), which resetview guarantees.
@@ -122,7 +125,7 @@ declare -A LAYOUT=(
 arrange() {
     c cancel >/dev/null 2>&1 || true
     c resetview
-    c open
+    open_1to1
     for cap in "${!LAYOUT[@]}"; do c "placeby $cap ${LAYOUT[$cap]}"; done
     sleep 0.6
     c commit

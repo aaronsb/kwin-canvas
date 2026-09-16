@@ -265,6 +265,7 @@ clients() {
 # fixtures — Dolphin, wallpaper.png – Gwenview.
 fixtures() {
     [ -f "$FIXTURES/wallpaper.png" ] || python3 "$FIXTURES/gen.py" >/dev/null
+    rm -f "$FIXTURES"/.*.kate-swp "$FIXTURES"/*.swp 2>/dev/null
     run kcalc >/dev/null
     run kwrite "$FIXTURES/sample.txt" >/dev/null
     run konsole -e sh -c "cat '$FIXTURES/konsole.txt'; exec sleep 1d" >/dev/null

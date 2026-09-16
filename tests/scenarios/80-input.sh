@@ -6,7 +6,7 @@ screen_of() {   # screen_of CX CY -> "SX SY"
 }
 run_scenario() {
     if ! have_input; then skip "fakeinput not built (make tools)"; return; fi
-    c open
+    open_1to1
     c home
     c "zoom 0.4 960 540"
     input move 1700 900

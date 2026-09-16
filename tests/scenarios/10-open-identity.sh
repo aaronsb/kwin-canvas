@@ -1,9 +1,11 @@
-scenario_desc="opening at 1:1 shows every window where it is"
+scenario_desc="opening fits everything by default; home is 1:1 with every window where it is"
 run_scenario() {
     c open
     assert_eq "visible" "$(sget visible)" true
-    assert_eq "zoom" "$(sget zoom)" 1.0000
+    assert_true "opens zoomed out (OpenZoom=fit)" "$(awk -v z="$(sget zoom)" 'BEGIN{print (z<1)}')" = 1
     assert_eq "entries" "$(sget entries)" 5
+    c home
+    assert_eq "zoom at home" "$(sget zoom)" 1.0000
     assert_eq "KCalc canvas x" "$(eget KCalc x)" 100
     assert_eq "KCalc frame x" "$(eget KCalc fx)" 100
     snap open-1to1

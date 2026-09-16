@@ -52,6 +52,49 @@ KWin.SceneEffect {
     property int revision: 0
     property int lastDebugSeq: 0
 
+    // ---- key bindings, from config ------------------------------------------
+    // Each entry is a list of Qt key codes parsed from a comma-separated list
+    // of Qt key names without the Key_ prefix ("Return,Enter").
+    property var bindings: ({})
+
+    function keysFor(spec) {
+        const out = [];
+        const names = String(spec || "").split(",");
+        for (let i = 0; i < names.length; ++i) {
+            const n = names[i].trim();
+            if (!n) continue;
+            const code = Qt["Key_" + n];
+            if (code === undefined) { console.warn("kwin-canvas: unknown key name", n); continue; }
+            out.push(code);
+        }
+        return out;
+    }
+
+    function rebuildBindings() {
+        bindings = {
+            apply: keysFor(configuration.KeyApply),
+            cancel: keysFor(configuration.KeyCancel),
+            home: keysFor(configuration.KeyHome),
+            origin: keysFor(configuration.KeyOrigin),
+            fit: keysFor(configuration.KeyFit),
+            zoomIn: keysFor(configuration.KeyZoomIn),
+            zoomOut: keysFor(configuration.KeyZoomOut),
+            pan: keysFor(configuration.KeyPan)
+        };
+    }
+
+    function bound(action, key) {
+        const list = bindings[action];
+        if (!list) return false;
+        for (let i = 0; i < list.length; ++i) if (list[i] === key) return true;
+        return false;
+    }
+
+    // Legend text for an action: the configured names, lower-cased.
+    function keyLabel(spec) {
+        return String(spec || "").split(",").map(function (n) { return n.trim().toLowerCase(); }).join("/");
+    }
+
     readonly property real zoomMin: configuration.ZoomMin
     readonly property real zoomStep: configuration.ZoomStep
     readonly property var palette: ["#4fa3ff", "#ff9f43", "#2ecc71", "#e056fd", "#f9ca24", "#ff6b6b", "#48dbfb", "#c8d6e5"]
@@ -301,6 +344,18 @@ KWin.SceneEffect {
         entryTargets = copyTargets(targets);
         snapshot();
         visible = true;
+        openView();
+    }
+
+    // Where the camera starts: fit everything, stay at 1:1, or a zoom
+    // anchored at the active screen's centre.
+    function openView() {
+        const spec = String(configuration.OpenZoom || "fit").trim().toLowerCase();
+        if (spec === "fit") { zoomExtents(); return; }
+        const z = Number(spec);
+        if (!(z > 0) || z >= 1) return;
+        const g = KWin.Workspace.activeScreen.geometry;
+        setZoom(z, Qt.point(g.x + g.width / 2, g.y + g.height / 2));
     }
 
     // Write every window's geometry relative to the frame it sits in, move it to
@@ -608,6 +663,7 @@ KWin.SceneEffect {
     }
 
     onConfigurationChanged: {
+        rebuildBindings();
         const seq = configuration.DebugSeq;
         if (seq !== lastDebugSeq) {
             lastDebugSeq = seq;
@@ -617,6 +673,7 @@ KWin.SceneEffect {
     }
 
     Component.onCompleted: {
+        rebuildBindings();
         lastDebugSeq = configuration.DebugSeq;
         if (configuration.AutoActivate) {
             Qt.callLater(open);
@@ -998,26 +1055,31 @@ KWin.SceneEffect {
         }
 
         Keys.onPressed: (event) => {
-            switch (event.key) {
-            case Qt.Key_Space:
+            const k = event.key;
+            if (effect.bound("pan", k)) {
                 if (!event.isAutoRepeat) view.spaceHeld = true;
-                event.accepted = true;
-                break;
-            case Qt.Key_Escape: effect.cancel(); event.accepted = true; break;
-            case Qt.Key_Return:
-            case Qt.Key_Enter: effect.commit(null); event.accepted = true; break;
-            case Qt.Key_Home: effect.home(); event.accepted = true; break;
-            case Qt.Key_0: effect.origin(); event.accepted = true; break;
-            case Qt.Key_F:
-            case Qt.Key_W: effect.zoomExtents(); event.accepted = true; break;
-            case Qt.Key_Plus:
-            case Qt.Key_Equal: effect.setZoom(effect.zoom * effect.zoomStep, KWin.Workspace.cursorPos); event.accepted = true; break;
-            case Qt.Key_Minus: effect.setZoom(effect.zoom / effect.zoomStep, KWin.Workspace.cursorPos); event.accepted = true; break;
+            } else if (effect.bound("cancel", k)) {
+                effect.cancel();
+            } else if (effect.bound("apply", k)) {
+                effect.commit(null);
+            } else if (effect.bound("home", k)) {
+                effect.home();
+            } else if (effect.bound("origin", k)) {
+                effect.origin();
+            } else if (effect.bound("fit", k)) {
+                effect.zoomExtents();
+            } else if (effect.bound("zoomIn", k)) {
+                effect.setZoom(effect.zoom * effect.zoomStep, KWin.Workspace.cursorPos);
+            } else if (effect.bound("zoomOut", k)) {
+                effect.setZoom(effect.zoom / effect.zoomStep, KWin.Workspace.cursorPos);
+            } else {
+                return;
             }
+            event.accepted = true;
         }
 
         Keys.onReleased: (event) => {
-            if (event.key === Qt.Key_Space && !event.isAutoRepeat) {
+            if (effect.bound("pan", event.key) && !event.isAutoRepeat) {
                 view.spaceHeld = false;
                 event.accepted = true;
             }
@@ -1041,8 +1103,14 @@ KWin.SceneEffect {
                 font.family: "monospace"
                 text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY)
                     + "   desktop " + KWin.Workspace.currentDesktop.name
-                    + "\ndrag ground or space+drag: pan   wheel: zoom   drag window: move   drag window edge: resize   drag frame tag/edge: move that desktop's screens   click window: pick"
-                    + "\nenter: apply   esc: cancel   home: look through frames   0: origin   f: fit"
+                    + "\ndrag ground or " + effect.keyLabel(effect.configuration.KeyPan) + "+drag: pan   wheel or "
+                    + effect.keyLabel(effect.configuration.KeyZoomIn) + " " + effect.keyLabel(effect.configuration.KeyZoomOut) + ": zoom"
+                    + "   drag window: move   drag window edge: resize   drag frame tag/edge: move that desktop's screens   click window: pick"
+                    + "\n" + effect.keyLabel(effect.configuration.KeyApply) + ": apply   "
+                    + effect.keyLabel(effect.configuration.KeyCancel) + ": cancel   "
+                    + effect.keyLabel(effect.configuration.KeyHome) + ": look through frames   "
+                    + effect.keyLabel(effect.configuration.KeyOrigin) + ": origin   "
+                    + effect.keyLabel(effect.configuration.KeyFit) + ": fit"
             }
         }
     }

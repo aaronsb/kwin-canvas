@@ -35,6 +35,38 @@
             <label>Optional image tiled across the canvas at 1:1. Empty draws the grid.</label>
             <default></default>
         </entry>
+        <entry name="OpenZoom" type="String">
+            <label>View when the canvas opens: "fit" zooms to every window and frame, "1" stays at 1:1, any other number is a zoom anchored at the screen centre.</label>
+            <default>fit</default>
+        </entry>
+        <entry name="KeyApply" type="String">
+            <label>Keys that apply and close, as Qt key names without the Key_ prefix, comma separated.</label>
+            <default>Return,Enter</default>
+        </entry>
+        <entry name="KeyCancel" type="String">
+            <default>Escape</default>
+        </entry>
+        <entry name="KeyHome" type="String">
+            <label>Look through the current desktop's frames.</label>
+            <default>Home</default>
+        </entry>
+        <entry name="KeyOrigin" type="String">
+            <label>Camera to the canvas origin.</label>
+            <default>0</default>
+        </entry>
+        <entry name="KeyFit" type="String">
+            <default>F,W</default>
+        </entry>
+        <entry name="KeyZoomIn" type="String">
+            <default>Plus,Equal</default>
+        </entry>
+        <entry name="KeyZoomOut" type="String">
+            <default>Minus</default>
+        </entry>
+        <entry name="KeyPan" type="String">
+            <label>Held while dragging to pan from anywhere.</label>
+            <default>Space</default>
+        </entry>
         <entry name="ToggleShortcut" type="String">
             <label>Key sequence that opens and closes the canvas.</label>
             <default>Meta+Space</default>

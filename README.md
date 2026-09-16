@@ -45,7 +45,7 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 
 | Key | At 1:1 | Canvas open |
 |---|---|---|
-| Meta+Space (configurable) | open the canvas | apply and close |
+| Meta+Space | open the canvas, zoomed to fit | apply and close |
 | Meta+Ctrl+Space | jump home | jump home |
 | drag on ground, Space+drag, or middle-drag | | pan |
 | wheel | | zoom at the cursor |
@@ -63,6 +63,13 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 
 Activating an off-screen window from the task manager pans the plane so it
 comes on screen.
+
+Every key above is a config entry in the `[Effect-kwin-canvas]` group of
+`kwinrc` (`KeyApply`, `KeyCancel`, `KeyHome`, `KeyOrigin`, `KeyFit`,
+`KeyZoomIn`, `KeyZoomOut`, `KeyPan`, comma-separated Qt key names without the
+`Key_` prefix), as are the two global chords (`ToggleShortcut`, `HomeShortcut`)
+and the opening view (`OpenZoom`: `fit`, `1`, or a zoom such as `0.5`). The
+legend inside the canvas is built from the same entries.
 
 ## Develop
 
