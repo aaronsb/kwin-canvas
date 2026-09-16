@@ -113,4 +113,7 @@ public API.
 
 ## License
 
-MIT
+GPL-2.0-or-later, KDE's licence for effects and plugins, so this can be
+contributed upstream without relicensing. `tools/protocols/fake-input.xml` is
+KDE's fake-input protocol definition, LGPL-2.1-or-later. Full texts in
+`LICENSES/`.

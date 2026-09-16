@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 scenario_desc="opening fits everything by default; home is 1:1 with every window where it is"
 run_scenario() {
     c open

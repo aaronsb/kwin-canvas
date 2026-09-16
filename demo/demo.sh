@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Scripted demo of kwin-canvas driven by real (fake-input) pointer and keyboard
 # events in a dedicated nest. Produces named screenshots and a frame sequence
 # in build/demo, then assembles demo.mp4 and demo.gif with ffmpeg.

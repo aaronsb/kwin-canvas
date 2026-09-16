@@ -10,7 +10,7 @@
         "Description": "Canvas ground plane: a grid or tiled image that scrolls with the kwin-canvas effect",
         "Icon": "view-grid",
         "Id": "kwin-canvas-ground",
-        "License": "MIT",
+        "License": "GPL-2.0-or-later",
         "Name": "Canvas Ground"
     },
     "X-KDE-ParentApp": "org.kde.plasmashell"

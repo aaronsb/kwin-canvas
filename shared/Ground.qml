@@ -1,4 +1,8 @@
 /*
+    SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+    SPDX-License-Identifier: GPL-2.0-or-later
+*/
+/*
     Ground plane: the canvas-space reference everything else sits on.
 
     originX/originY are the screen-local pixel position of canvas (0,0).

@@ -1,4 +1,8 @@
 /*
+    SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+    SPDX-License-Identifier: GPL-2.0-or-later
+*/
+/*
     Canvas ground wallpaper. Draws the same Ground as the effect, at zoom 1,
     offset by the canvas origin the effect last published.
 */

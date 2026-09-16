@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Generate the test fixtures: a wallpaper, a seamless ground tile, and text files.
 
 Everything is drawn procedurally so the repo carries no binary assets and the

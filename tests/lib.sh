@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Test library for kwin-canvas. Sourced by tests/run.sh; scenarios are sourced
 # after it and define run_scenario(). Reuses dev/nest.sh for everything that
 # talks to the nested compositor.

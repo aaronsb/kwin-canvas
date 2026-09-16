@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 scenario_desc="resizing from the canvas commands the client and follows what it accepts"
 run_scenario() {
     open_1to1

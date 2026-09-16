@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Check (and optionally install) the tools kwin-canvas needs.
 #   dev/deps.sh            report, print the pacman line for anything missing
 #   dev/deps.sh --install  install what is missing with pacman (sudo)

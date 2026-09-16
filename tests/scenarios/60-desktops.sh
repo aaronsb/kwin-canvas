@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 scenario_desc="desktops are frame groups; a window in another desktop's frame moves there"
 run_scenario() {
     open_1to1

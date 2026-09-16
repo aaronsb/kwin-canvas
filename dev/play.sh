@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 # A nest to play in: fixture apps in the test layout, canvas open and fitted.
 #   dev/play.sh            default nest (NEST_NAME=kwincanvas)
 #   dev/play.sh --closed   leave the canvas closed at 1:1

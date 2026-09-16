@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 scenario_desc="cursor-anchored zoom, pan, and zoom to fit"
 run_scenario() {
     open_1to1

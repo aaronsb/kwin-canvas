@@ -1,3 +1,7 @@
+/*
+    SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+    SPDX-License-Identifier: GPL-2.0-or-later
+*/
 /* Key name to evdev keycode table for fakeinput.
  * Codes are from linux/input-event-codes.h. */
 #ifndef FAKEINPUT_KEYS_H

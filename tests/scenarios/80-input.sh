@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 scenario_desc="real pointer and keyboard input through fake-input: wheel, pan, drag, escape"
 # Screen position of a canvas point at the current camera, from the last state.
 screen_of() {   # screen_of CX CY -> "SX SY"

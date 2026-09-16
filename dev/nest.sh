@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Nested KWin harness for kwin-canvas.
 #
 # Runs a second kwin_wayland as a window inside the live session, on its own
