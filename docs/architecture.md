@@ -140,6 +140,20 @@ Verified against the 6.7.5 source, in `src/`:
 - The QML engine caches components by URL. An edited `main.qml` does not load
   on `unloadEffect` + `loadEffect`; restart KWin.
 
+## Layers
+
+Back to front inside each screen's view: the ground, the monitor frames, the
+windows in KWin's stacking order, the frame tags, the HUD. A frame's interior
+is a `DesktopBackground` item for its output, desktop and activity, which is
+the real Plasma wallpaper. Wallpapers in Plasma are per screen and per
+activity, so frames of different desktops show the same image unless
+activities differ. A faint tint in the desktop's colour sits over it so the
+frame reads as a sheet even with no background window, as in the nest.
+
+`DesktopBackground` with an empty `activity` crashes KWin 6.7 when activities
+are disabled (null dereference in `updateWindow`), so the effect always
+passes a non-empty activity.
+
 ## Known limits
 
 - **No interaction while zoomed.** The canvas is a navigation mode. This is

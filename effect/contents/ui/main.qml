@@ -603,6 +603,97 @@ KWin.SceneEffect {
         }
     }
 
+    // ---- frame tag ---------------------------------------------------------
+    // The desktop's name tag: drag handle for its frame group, plus the
+    // desktop controls KDE's pager has: add after, remove.
+    component FrameTag : Rectangle {
+        id: tag
+        required property Item viewItem
+        required property var desktop
+        required property int desktopIndex
+        required property var screen
+        readonly property bool current: desktop === KWin.Workspace.currentDesktop
+        readonly property color accent: effect.palette[desktopIndex % effect.palette.length]
+        width: tagRow.implicitWidth + 12
+        height: tagRow.implicitHeight + 6
+        radius: 3
+        color: accent
+        opacity: current ? 1 : 0.8
+
+        Row {
+            id: tagRow
+            anchors.centerIn: parent
+            spacing: 6
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: tag.desktop.name + " \u00b7 " + tag.screen.name + "  " + tag.screen.geometry.width + "x" + tag.screen.geometry.height
+                color: "#ffffff"
+                font.pixelSize: 12
+                font.bold: true
+            }
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 18; height: 18; radius: 3
+                color: addHover.hovered ? "#60ffffff" : "#30ffffff"
+                Kirigami.Icon {
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    source: "list-add"
+                    color: "#ffffff"
+                }
+                HoverHandler {
+                    id: addHover
+                    onHoveredChanged: tag.viewItem.hoverCount += hovered ? 1 : -1
+                    Component.onDestruction: if (hovered) tag.viewItem.hoverCount -= 1
+                }
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    onTapped: effect.addDesktopAfter(tag.desktop)
+                }
+            }
+            Rectangle {
+                visible: tag.desktopIndex > 0
+                anchors.verticalCenter: parent.verticalCenter
+                width: 18; height: 18; radius: 3
+                color: removeHover.hovered ? "#80ff4040" : "#30ffffff"
+                Kirigami.Icon {
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    source: "edit-delete"
+                    color: "#ffffff"
+                }
+                HoverHandler {
+                    id: removeHover
+                    onHoveredChanged: tag.viewItem.hoverCount += hovered ? 1 : -1
+                    Component.onDestruction: if (hovered) tag.viewItem.hoverCount -= 1
+                }
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                    onTapped: effect.removeDesktop(tag.desktop)
+                }
+            }
+        }
+        HoverHandler {
+            cursorShape: Qt.SizeAllCursor
+            onHoveredChanged: tag.viewItem.hoverCount += hovered ? 1 : -1
+            Component.onDestruction: if (hovered) tag.viewItem.hoverCount -= 1
+        }
+        DragHandler {
+            target: null
+            enabled: !tag.viewItem.spaceHeld
+            acceptedButtons: Qt.LeftButton
+            property point last: Qt.point(0, 0)
+            onActiveChanged: last = Qt.point(0, 0)
+            onActiveTranslationChanged: {
+                const t = activeTranslation;
+                effect.dragTarget(tag.desktop, t.x - last.x, t.y - last.y);
+                last = t;
+            }
+        }
+    }
+
     // ---- per-screen view ---------------------------------------------------
     delegate: Item {
         id: view
@@ -676,7 +767,7 @@ KWin.SceneEffect {
                 y: { effect.revision; return (effect.entries[index].y - effect.viewY) * effect.zoom - view.sg.y; }
                 width: { effect.revision; return effect.entries[index].width * effect.zoom; }
                 height: { effect.revision; return effect.entries[index].height * effect.zoom; }
-                z: index
+                z: 1000 + index
 
                 KWin.WindowThumbnail {
                     anchors.fill: parent
@@ -793,8 +884,13 @@ KWin.SceneEffect {
             }
         }
 
+        // Z order, back to front: ground, monitor frames with their real
+        // desktop background, windows in KWin's stacking order, frame tags, HUD.
+
         // Monitor frames: one per desktop per output. A desktop's frames are a
-        // rigid group; dragging any tag or edge moves them all.
+        // rigid group; dragging any edge band moves them all. The interior is
+        // the Plasma desktop background for that output, so each frame reads
+        // as a desk top.
         Repeater {
             model: KWin.Workspace.desktops
             delegate: Repeater {
@@ -814,7 +910,24 @@ KWin.SceneEffect {
                     y: { effect.revision; return (effect.peekTarget(desktopFrames.desktop).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
                     width: og.width * effect.zoom
                     height: og.height * effect.zoom
-                    z: 50000 + (desktopFrames.current ? 1 : 0)
+                    z: 1
+
+                    // An empty activity makes KWin 6.7 dereference a null
+                    // activities object when activities are disabled, so
+                    // always pass a non-empty one.
+                    KWin.DesktopBackground {
+                        anchors.fill: parent
+                        output: frame.modelData
+                        desktop: desktopFrames.desktop
+                        activity: KWin.Workspace.currentActivity || "default"
+                    }
+
+                    // Sheet tint: keeps the frame legible when no background window exists.
+                    Rectangle {
+                        anchors.fill: parent
+                        color: desktopFrames.accent
+                        opacity: desktopFrames.current ? 0.10 : 0.06
+                    }
 
                     Rectangle {
                         anchors.fill: parent
@@ -824,95 +937,7 @@ KWin.SceneEffect {
                         opacity: desktopFrames.current ? 0.95 : 0.6
                     }
 
-                    // Name tag: the drag handle, like a window caption, with
-                    // the desktop controls KDE's pager has: add after, remove.
-                    Rectangle {
-                        id: tag
-                        x: 0
-                        y: -height - 2
-                        width: tagRow.implicitWidth + 12
-                        height: tagRow.implicitHeight + 6
-                        radius: 3
-                        color: desktopFrames.accent
-                        opacity: desktopFrames.current ? 1 : 0.75
-                        Row {
-                            id: tagRow
-                            anchors.centerIn: parent
-                            spacing: 6
-                            Text {
-                                id: tagText
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: desktopFrames.desktop.name + " · " + frame.modelData.name + "  " + frame.og.width + "x" + frame.og.height
-                                color: "#ffffff"
-                                font.pixelSize: 12
-                                font.bold: true
-                            }
-                            Rectangle {
-                                id: addButton
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 18; height: 18; radius: 3
-                                color: addHover.hovered ? "#60ffffff" : "#30ffffff"
-                                Kirigami.Icon {
-                                    anchors.fill: parent
-                                    anchors.margins: 2
-                                    source: "list-add"
-                                    color: "#ffffff"
-                                }
-                                HoverHandler {
-                                    id: addHover
-                                    onHoveredChanged: view.hoverCount += hovered ? 1 : -1
-                                    Component.onDestruction: if (hovered) view.hoverCount -= 1
-                                }
-                                TapHandler {
-                                    acceptedButtons: Qt.LeftButton
-                                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                                    onTapped: effect.addDesktopAfter(desktopFrames.desktop)
-                                }
-                            }
-                            Rectangle {
-                                id: removeButton
-                                visible: desktopFrames.desktopIndex > 0
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 18; height: 18; radius: 3
-                                color: removeHover.hovered ? "#80ff4040" : "#30ffffff"
-                                Kirigami.Icon {
-                                    anchors.fill: parent
-                                    anchors.margins: 2
-                                    source: "edit-delete"
-                                    color: "#ffffff"
-                                }
-                                HoverHandler {
-                                    id: removeHover
-                                    onHoveredChanged: view.hoverCount += hovered ? 1 : -1
-                                    Component.onDestruction: if (hovered) view.hoverCount -= 1
-                                }
-                                TapHandler {
-                                    acceptedButtons: Qt.LeftButton
-                                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                                    onTapped: effect.removeDesktop(desktopFrames.desktop)
-                                }
-                            }
-                        }
-                        HoverHandler {
-                            onHoveredChanged: view.hoverCount += hovered ? 1 : -1
-                            Component.onDestruction: if (hovered) view.hoverCount -= 1
-                        }
-                        DragHandler {
-                            target: null
-                            enabled: !view.spaceHeld
-                            acceptedButtons: Qt.LeftButton
-                            cursorShape: Qt.SizeAllCursor
-                            property point last: Qt.point(0, 0)
-                            onActiveChanged: last = Qt.point(0, 0)
-                            onActiveTranslationChanged: {
-                                const t = activeTranslation;
-                                effect.dragTarget(desktopFrames.desktop, t.x - last.x, t.y - last.y);
-                                last = t;
-                            }
-                        }
-                    }
-
-                    // Edge bands: also drag handles.
+                    // Edge bands: drag handles for the whole group.
                     Repeater {
                         model: 4
                         delegate: Item {
@@ -923,6 +948,7 @@ KWin.SceneEffect {
                             width: (index === 0 || index === 2) ? frame.width : band
                             height: (index === 1 || index === 3) ? frame.height : band
                             HoverHandler {
+                                cursorShape: Qt.SizeAllCursor
                                 onHoveredChanged: view.hoverCount += hovered ? 1 : -1
                                 Component.onDestruction: if (hovered) view.hoverCount -= 1
                             }
@@ -930,7 +956,6 @@ KWin.SceneEffect {
                                 target: null
                                 enabled: !view.spaceHeld
                                 acceptedButtons: Qt.LeftButton
-                                cursorShape: Qt.SizeAllCursor
                                 property point last: Qt.point(0, 0)
                                 onActiveChanged: last = Qt.point(0, 0)
                                 onActiveTranslationChanged: {
@@ -941,6 +966,27 @@ KWin.SceneEffect {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Frame tags, above the windows so they can always be grabbed.
+        Repeater {
+            model: KWin.Workspace.desktops
+            delegate: Repeater {
+                id: desktopTags
+                required property var modelData
+                required property int index
+                model: KWin.Workspace.screens
+                delegate: FrameTag {
+                    required property var modelData
+                    viewItem: view
+                    desktop: desktopTags.modelData
+                    desktopIndex: desktopTags.index
+                    screen: modelData
+                    x: { effect.revision; return (effect.peekTarget(desktop).x + screen.geometry.x - effect.viewX) * effect.zoom - view.sg.x; }
+                    y: { effect.revision; return (effect.peekTarget(desktop).y + screen.geometry.y - effect.viewY) * effect.zoom - view.sg.y - height - 2; }
+                    z: 60000
                 }
             }
         }
