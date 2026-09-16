@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com> -->
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<ui version="4.0">
+ <class>KWinCanvasConfigForm</class>
+ <widget class="QWidget" name="KWinCanvasConfigForm">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QGroupBox" name="group0"><property name="title"><string>Opening</string></property>
+    <layout class="QFormLayout" name="form0">
+     <item row="0" column="0"><widget class="QLabel" name="label_OpenZoom"><property name="text"><string>View when opened (fit, 1, or a zoom like 0.5)</string></property><property name="buddy"><cstring>kcfg_OpenZoom</cstring></property></widget></item>
+     <item row="0" column="1"><widget class="QLineEdit" name="kcfg_OpenZoom"/></item>
+    </layout></widget></item>
+   <item><widget class="QGroupBox" name="group1"><property name="title"><string>Keys inside the canvas (Qt key names, comma separated)</string></property>
+    <layout class="QFormLayout" name="form1">
+     <item row="0" column="0"><widget class="QLabel" name="label_KeyApply"><property name="text"><string>Apply and close</string></property><property name="buddy"><cstring>kcfg_KeyApply</cstring></property></widget></item>
+     <item row="0" column="1"><widget class="QLineEdit" name="kcfg_KeyApply"/></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_KeyCancel"><property name="text"><string>Cancel</string></property><property name="buddy"><cstring>kcfg_KeyCancel</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_KeyCancel"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="label_KeyHome"><property name="text"><string>Look through frames</string></property><property name="buddy"><cstring>kcfg_KeyHome</cstring></property></widget></item>
+     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_KeyHome"/></item>
+     <item row="3" column="0"><widget class="QLabel" name="label_KeyOrigin"><property name="text"><string>Camera to origin</string></property><property name="buddy"><cstring>kcfg_KeyOrigin</cstring></property></widget></item>
+     <item row="3" column="1"><widget class="QLineEdit" name="kcfg_KeyOrigin"/></item>
+     <item row="4" column="0"><widget class="QLabel" name="label_KeyFit"><property name="text"><string>Zoom to fit</string></property><property name="buddy"><cstring>kcfg_KeyFit</cstring></property></widget></item>
+     <item row="4" column="1"><widget class="QLineEdit" name="kcfg_KeyFit"/></item>
+     <item row="5" column="0"><widget class="QLabel" name="label_KeyZoomIn"><property name="text"><string>Zoom in</string></property><property name="buddy"><cstring>kcfg_KeyZoomIn</cstring></property></widget></item>
+     <item row="5" column="1"><widget class="QLineEdit" name="kcfg_KeyZoomIn"/></item>
+     <item row="6" column="0"><widget class="QLabel" name="label_KeyZoomOut"><property name="text"><string>Zoom out</string></property><property name="buddy"><cstring>kcfg_KeyZoomOut</cstring></property></widget></item>
+     <item row="6" column="1"><widget class="QLineEdit" name="kcfg_KeyZoomOut"/></item>
+     <item row="7" column="0"><widget class="QLabel" name="label_KeyPan"><property name="text"><string>Hold to pan from anywhere</string></property><property name="buddy"><cstring>kcfg_KeyPan</cstring></property></widget></item>
+     <item row="7" column="1"><widget class="QLineEdit" name="kcfg_KeyPan"/></item>
+    </layout></widget></item>
+   <item><widget class="QGroupBox" name="group2"><property name="title"><string>Mouse gestures (Click or DoubleClick, with Shift+, Ctrl+, Alt+, Meta+)</string></property>
+    <layout class="QFormLayout" name="form2">
+     <item row="0" column="0"><widget class="QLabel" name="label_MouseFocusWindow"><property name="text"><string>On a window: apply focused on it</string></property><property name="buddy"><cstring>kcfg_MouseFocusWindow</cstring></property></widget></item>
+     <item row="0" column="1"><widget class="QLineEdit" name="kcfg_MouseFocusWindow"/></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_MouseGotoDesktop"><property name="text"><string>On a frame: go to that desktop</string></property><property name="buddy"><cstring>kcfg_MouseGotoDesktop</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_MouseGotoDesktop"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="label_MouseNewDesktopAt"><property name="text"><string>On a window outside every frame: new desktop there</string></property><property name="buddy"><cstring>kcfg_MouseNewDesktopAt</cstring></property></widget></item>
+     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_MouseNewDesktopAt"/></item>
+    </layout></widget></item>
+   <item><widget class="QGroupBox" name="group3"><property name="title"><string>Default global chords (rebind under Shortcuts > KWin)</string></property>
+    <layout class="QFormLayout" name="form3">
+     <item row="0" column="0"><widget class="QLabel" name="label_ToggleShortcut"><property name="text"><string>Open or close the canvas</string></property><property name="buddy"><cstring>kcfg_ToggleShortcut</cstring></property></widget></item>
+     <item row="0" column="1"><widget class="QLineEdit" name="kcfg_ToggleShortcut"/></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_HomeShortcut"><property name="text"><string>Return this desktop to the origin</string></property><property name="buddy"><cstring>kcfg_HomeShortcut</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_HomeShortcut"/></item>
+    </layout></widget></item>
+   <item><widget class="QGroupBox" name="group4"><property name="title"><string>Ground</string></property>
+    <layout class="QFormLayout" name="form4">
+     <item row="0" column="0"><widget class="QLabel" name="label_GridBase"><property name="text"><string>Minor grid spacing (px)</string></property><property name="buddy"><cstring>kcfg_GridBase</cstring></property></widget></item>
+     <item row="0" column="1"><widget class="QSpinBox" name="kcfg_GridBase"><property name="minimum"><number>8</number></property><property name="maximum"><number>1024</number></property></widget></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_TileImage"><property name="text"><string>Tile image (file URL, empty for the grid)</string></property><property name="buddy"><cstring>kcfg_TileImage</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_TileImage"/></item>
+    </layout></widget></item>
+   <item><spacer name="spacer"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+  </layout>
+ </widget>
+ <resources/><connections/>
+</ui>

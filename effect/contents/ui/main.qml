@@ -94,6 +94,34 @@ KWin.SceneEffect {
         return false;
     }
 
+    // Mouse gestures: "Shift+DoubleClick" -> { count: 2, mods: Qt.ShiftModifier }.
+    function gestureFor(spec) {
+        let count = 0, mods = 0;
+        const parts = String(spec || "").split("+");
+        for (let i = 0; i < parts.length; ++i) {
+            const p = parts[i].trim().toLowerCase();
+            if (p === "click") count = 1;
+            else if (p === "doubleclick") count = 2;
+            else if (p === "shift") mods |= Qt.ShiftModifier;
+            else if (p === "ctrl" || p === "control") mods |= Qt.ControlModifier;
+            else if (p === "alt") mods |= Qt.AltModifier;
+            else if (p === "meta") mods |= Qt.MetaModifier;
+            else if (p) console.warn("kwin-canvas: unknown gesture part", p);
+        }
+        return { count: count, mods: mods };
+    }
+
+    function gestureMatches(spec, count, modifiers) {
+        const g = gestureFor(spec);
+        if (g.count === 0 || count !== g.count) return false;
+        const mask = Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
+        return (modifiers & mask) === g.mods;
+    }
+
+    function gestureLabel(spec) {
+        return String(spec || "").replace(/DoubleClick/i, "double-click").replace(/Click/, "click").toLowerCase();
+    }
+
     // Legend text for an action: the configured names, lower-cased.
     function keyLabel(spec) {
         return String(spec || "").split(",").map(function (n) { return n.trim().toLowerCase(); }).join("/");
@@ -208,19 +236,23 @@ KWin.SceneEffect {
         return out;
     }
 
-    // The desktop whose frames contain the centre of a canvas rect, or null.
+    // The desktop whose frames overlap a canvas rect the most, or null if none
+    // touches it. A window straddling two frames goes to the larger share.
     function desktopAt(rect) {
-        const cx = rect.x + rect.width / 2, cy = rect.y + rect.height / 2;
         const ds = KWin.Workspace.desktops;
         const screens = KWin.Workspace.screens;
+        let best = null, bestArea = 0;
         for (let i = 0; i < ds.length; ++i) {
             const t = peekTarget(ds[i]);
             for (let j = 0; j < screens.length; ++j) {
                 const g = screens[j].geometry;
-                if (cx >= t.x + g.x && cx < t.x + g.x + g.width && cy >= t.y + g.y && cy < t.y + g.y + g.height) return ds[i];
+                const w = Math.min(rect.x + rect.width, t.x + g.x + g.width) - Math.max(rect.x, t.x + g.x);
+                const h = Math.min(rect.y + rect.height, t.y + g.y + g.height) - Math.max(rect.y, t.y + g.y);
+                if (w <= 0 || h <= 0) continue;
+                if (w * h > bestArea) { bestArea = w * h; best = ds[i]; }
             }
         }
-        return null;
+        return best;
     }
 
     function dragTarget(d, dx, dy) {
@@ -420,9 +452,12 @@ KWin.SceneEffect {
         if (visible) commit(null); else open();
     }
 
-    // Apply with this window on screen. If it sits in no frame, centre the
-    // current desktop's active-screen frame on it first.
-    function pick(entry) {
+    // ---- named actions --------------------------------------------------------
+
+    // focusWindow: apply with this window on screen and focused. A window that
+    // overlaps a frame keeps that desktop's position; one outside every frame
+    // gets the current desktop's active-screen frame centred on it.
+    function focusWindow(entry) {
         if (!desktopAt(entry)) {
             const g = KWin.Workspace.activeScreen.geometry;
             const t = targetOf(KWin.Workspace.currentDesktop);
@@ -431,6 +466,46 @@ KWin.SceneEffect {
         }
         commit(entry.window);
     }
+
+    // gotoDesktop: apply with that desktop current, frames where they are.
+    function gotoDesktop(d) {
+        KWin.Workspace.currentDesktop = d;
+        commit(null);
+    }
+
+    // newDesktopAt: a new desktop whose active-screen frame is centred on the
+    // window, the window moved into it, applied and focused.
+    function newDesktopAt(entry) {
+        // Workspace.desktops is a live view, so remember ids, not the list.
+        const before = {};
+        const ds0 = KWin.Workspace.desktops;
+        for (let i = 0; i < ds0.length; ++i) before[ds0[i].id] = true;
+        KWin.Workspace.createDesktop(ds0.length, "Desktop " + (ds0.length + 1));
+        const after = KWin.Workspace.desktops;
+        let nd = null;
+        for (let i = 0; i < after.length; ++i) if (!before[after[i].id]) nd = after[i];
+        if (!nd) return;
+        const g = KWin.Workspace.activeScreen.geometry;
+        targets[nd.id] = { x: entry.x + entry.width / 2 - (g.x + g.width / 2),
+                           y: entry.y + entry.height / 2 - (g.y + g.height / 2) };
+        revision++;
+        commit(entry.window);
+    }
+
+    // Dispatch a gesture on a window against the mouse bindings.
+    function windowGesture(entry, count, modifiers) {
+        if (gestureMatches(configuration.MouseNewDesktopAt, count, modifiers) && !desktopAt(entry)) {
+            newDesktopAt(entry);
+        } else if (gestureMatches(configuration.MouseFocusWindow, count, modifiers)) {
+            focusWindow(entry);
+        }
+    }
+
+    function frameGesture(d, count, modifiers) {
+        if (gestureMatches(configuration.MouseGotoDesktop, count, modifiers)) gotoDesktop(d);
+    }
+
+    function pick(entry) { focusWindow(entry); }
 
     // Move a window on the canvas by a screen-space delta while the canvas is open.
     // Entries are addressed by index: the Repeater hands delegates a copy of the
@@ -570,6 +645,15 @@ KWin.SceneEffect {
             effect.commit(null);
         }
     }
+    // The in-canvas actions as global shortcuts too, with no default chord,
+    // so they can be bound in System Settings > Shortcuts > KWin. They act
+    // only while the canvas is open.
+    KWin.ShortcutHandler { name: "Canvas Apply";    text: "Canvas: apply and close";           sequence: ""; onActivated: if (effect.visible) effect.commit(null) }
+    KWin.ShortcutHandler { name: "Canvas Cancel";   text: "Canvas: cancel";                    sequence: ""; onActivated: if (effect.visible) effect.cancel() }
+    KWin.ShortcutHandler { name: "Canvas Fit";      text: "Canvas: zoom to fit";               sequence: ""; onActivated: if (effect.visible) effect.zoomExtents() }
+    KWin.ShortcutHandler { name: "Canvas Origin";   text: "Canvas: camera to the origin";      sequence: ""; onActivated: if (effect.visible) effect.origin() }
+    KWin.ShortcutHandler { name: "Canvas Zoom In";  text: "Canvas: zoom in";                   sequence: ""; onActivated: if (effect.visible) effect.setZoom(effect.zoom * effect.zoomStep, KWin.Workspace.cursorPos) }
+    KWin.ShortcutHandler { name: "Canvas Zoom Out"; text: "Canvas: zoom out";                  sequence: ""; onActivated: if (effect.visible) effect.setZoom(effect.zoom / effect.zoomStep, KWin.Workspace.cursorPos) }
 
     // ---- screen edges ------------------------------------------------------
     // The Screen Edges settings page lists this effect (X-KWin-Border-Activate)
@@ -648,6 +732,9 @@ KWin.SceneEffect {
             break;
         }
         case "pick": pick(entries[Number(a[1])]); break;
+        case "focus": focusWindow(entries[Number(a[1])]); break;
+        case "goto": gotoDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
+        case "newdesktopat": newDesktopAt(entries[Number(a[1])]); break;
         case "activate": {
             const all = KWin.Workspace.stackingOrder;
             for (let i = 0; i < all.length; ++i) {
@@ -726,7 +813,7 @@ KWin.SceneEffect {
         signal dragStarted()
         signal dragged(real dx, real dy)
         signal dragEnded()
-        signal tapped()
+        signal tapped(int count, int modifiers)
 
         HoverHandler {
             id: gripHover
@@ -752,9 +839,10 @@ KWin.SceneEffect {
             }
         }
         TapHandler {
+            id: gripTap
             enabled: grip.tappable && !grip.viewItem.spaceHeld
             acceptedButtons: Qt.LeftButton
-            onTapped: grip.tapped()
+            onTapped: grip.tapped(tapCount, point.modifiers)
         }
     }
 
@@ -943,6 +1031,14 @@ KWin.SceneEffect {
                         opacity: desktopFrames.current ? 0.95 : 0.6
                     }
 
+                    // A gesture on the frame's own area (windows sit above and
+                    // take their own taps).
+                    TapHandler {
+                        enabled: !view.spaceHeld
+                        acceptedButtons: Qt.LeftButton
+                        onTapped: effect.frameGesture(desktopFrames.desktop, tapCount, point.modifiers)
+                    }
+
                     // Edge bands: grips for the whole group.
                     Repeater {
                         model: 4
@@ -1015,7 +1111,7 @@ KWin.SceneEffect {
                     viewItem: view
                     tappable: true
                     onDragged: (dx, dy) => effect.dragEntry(thumb.index, dx, dy)
-                    onTapped: effect.pick(thumb.entry)
+                    onTapped: (count, modifiers) => effect.windowGesture(thumb.entry, count, modifiers)
                 }
 
                 // Resize grips: four edges, four corners, above the body. Each
@@ -1133,7 +1229,10 @@ KWin.SceneEffect {
                     + "   desktop " + KWin.Workspace.currentDesktop.name
                     + "\ndrag ground or " + effect.keyLabel(effect.configuration.KeyPan) + "+drag: pan   wheel or "
                     + effect.keyLabel(effect.configuration.KeyZoomIn) + " " + effect.keyLabel(effect.configuration.KeyZoomOut) + ": zoom"
-                    + "   drag window: move   drag window edge: resize   drag frame tag/edge: move that desktop's screens   click window: pick"
+                    + "   drag window: move   drag window edge: resize   drag frame tag/edge: move that desktop's screens"
+                    + "\n" + effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window: focus it   "
+                    + effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame: go to that desktop   "
+                    + effect.gestureLabel(effect.configuration.MouseNewDesktopAt) + " window outside frames: new desktop there"
                     + "\n" + effect.keyLabel(effect.configuration.KeyApply) + ": apply   "
                     + effect.keyLabel(effect.configuration.KeyCancel) + ": cancel   "
                     + effect.keyLabel(effect.configuration.KeyHome) + ": look through frames   "

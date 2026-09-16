@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+scenario_desc="mouse gestures: double-click focuses a window, double-click a frame goes there, shift+double-click makes a desktop over a window"
+screen_of() {
+    awk -v cx="$1" -v cy="$2" -v vx="$(sget viewx)" -v vy="$(sget viewy)" -v z="$(sget zoom)" \
+        'BEGIN{printf "%d %d", (cx-vx)*z, (cy-vy)*z}'
+}
+dblclick() { printf "move $1 $2\nclick\nsleep 60\nclick\n" | input; }
+run_scenario() {
+    if ! have_input; then skip "fakeinput not built (make tools)"; return; fi
+    # A window far outside every frame, then double-click it: the current
+    # desktop's frame comes to it and the window is focused at 1:1.
+    open_1to1
+    c "placeby KCalc 6000 4000"
+    c extents
+    read -r sx sy <<<"$(screen_of 6240 4210)"
+    dblclick "$sx" "$sy"
+    sleep 0.6; c state
+    assert_eq "double-click applied" "$(sget visible)" false
+    local fx; fx=$(eget KCalc fx)
+    assert_true "KCalc on screen after focus" "$(awk -v x="$fx" 'BEGIN{print (x>=0 && x+480<=1920)}')" = 1
+    assert_eq "still on desktop 1" "$(eget KCalc desktop)" "$(tget 0 name)"
+
+    # Shift+double-click on a window outside every frame: a new desktop centred on it.
+    open_1to1
+    c "placeby Gwenview 9000 -3000"
+    c extents
+    read -r sx sy <<<"$(screen_of 9230 -2790)"
+    printf "move $sx $sy\nkey shift down\nclick\nsleep 60\nclick\nkey shift up\n" | input
+    sleep 0.8; c state
+    assert_eq "three desktops now" "$(sget ndesktops)" 3
+    assert_eq "Gwenview moved to the new desktop" "$(eget Gwenview desktop)" "$(tget 2 name)"
+    assert_eq "new desktop is current" "$(sget desktop)" "$(tget 2 name)"
+
+    # Double-click desktop 1's frame area: back to desktop 1, frames untouched.
+    open_1to1
+    c extents
+    local tx ty; tx=$(tget 0 x); ty=$(tget 0 y)
+    read -r sx sy <<<"$(screen_of $((tx + 1900)) $((ty + 1060)))"
+    dblclick "$sx" "$sy"
+    sleep 0.6; c state
+    assert_eq "frame double-click applied" "$(sget visible)" false
+    assert_eq "desktop 1 is current" "$(sget desktop)" "$(tget 0 name)"
+
+    # Restore: Gwenview back, extra desktop gone.
+    open_1to1
+    c "placeby Gwenview 1400 120"
+    c commit
+    c "rmdesktop 2"
+    sleep 0.5
+    arrange >/dev/null
+}

@@ -54,7 +54,9 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | drag a window's edge or corner | | resize it, live |
 | + on a frame tag | | add a desktop after that one |
 | trash on a frame tag | | remove that desktop (never the first) |
-| click a window | | apply with it on screen, focus it |
+| double-click a window | | apply with it on screen, focus it |
+| double-click a frame | | apply with that desktop current |
+| Shift+double-click a window outside every frame | | new desktop centred on it, window moved there |
 | Enter | | apply and close |
 | Esc | | cancel, nothing moves |
 | Home | | look through the current desktop's frames |
@@ -68,14 +70,17 @@ The canvas can also replace the Overview hot corner. It appears in System
 Settings under Screen Edges, so any edge or corner can open it; pushing the
 pointer in toggles it. In the nest the top-left corner is preconfigured.
 
-Every key above is a config entry in the `[Effect-kwin-canvas]` group of
-`kwinrc` (`KeyApply`, `KeyCancel`, `KeyHome`, `KeyOrigin`, `KeyFit`,
-`KeyZoomIn`, `KeyZoomOut`, `KeyPan`, comma-separated Qt key names without the
-`Key_` prefix), as are the two global chords (`ToggleShortcut`, `HomeShortcut`)
-the opening view (`OpenZoom`: `fit`, `1`, or a zoom such as `0.5`), and the
-screen edges (`BorderActivate`, `TouchBorderActivate`, as ElectricBorder
-numbers, which the Screen Edges page writes for you). The legend inside the
-canvas is built from the same entries.
+Everything above is reassignable the KDE way:
+
+- **Global chords** live in System Settings → Shortcuts → KWin: Toggle Canvas,
+  Canvas Home, and the in-canvas actions (Apply, Cancel, Fit, Origin, Zoom In,
+  Zoom Out), which have no default chord until you give them one.
+- **Effect settings** are in Desktop Effects → Canvas → configure: the opening
+  view, the keys the open canvas listens for, the three mouse gestures, and the
+  ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
+- **Screen edges** are assigned on the Screen Edges page.
+
+The legend inside the canvas is built from the same entries.
 
 ## Develop
 

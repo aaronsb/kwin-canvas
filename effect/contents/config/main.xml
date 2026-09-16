@@ -75,6 +75,18 @@
             <label>Held while dragging to pan from anywhere.</label>
             <default>Space</default>
         </entry>
+        <entry name="MouseFocusWindow" type="String">
+            <label>Gesture on a window that applies with it focused: Click or DoubleClick, with optional Shift+, Ctrl+, Alt+, Meta+.</label>
+            <default>DoubleClick</default>
+        </entry>
+        <entry name="MouseGotoDesktop" type="String">
+            <label>Gesture on a desktop frame that applies with that desktop current.</label>
+            <default>DoubleClick</default>
+        </entry>
+        <entry name="MouseNewDesktopAt" type="String">
+            <label>Gesture on a window outside every frame that creates a desktop centred on it.</label>
+            <default>Shift+DoubleClick</default>
+        </entry>
         <entry name="ToggleShortcut" type="String">
             <label>Key sequence that opens and closes the canvas.</label>
             <default>Meta+Space</default>
