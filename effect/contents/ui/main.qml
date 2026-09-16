@@ -134,19 +134,57 @@ KWin.SceneEffect {
         revision++;
     }
 
+    function makeEntry(w) {
+        const d = desktopOf(w);
+        const t = targetOf(d);
+        const g = w.frameGeometry;
+        return { window: w, desktop: d, x: g.x + t.x, y: g.y + t.y, width: g.width, height: g.height,
+                 frameX: g.x, frameY: g.y, anchorRight: false, anchorBottom: false };
+    }
+
     function snapshot() {
         const list = [];
         const stack = KWin.Workspace.stackingOrder;
         for (let i = 0; i < stack.length; ++i) {
             const w = stack[i];
             if (!isCanvasWindow(w, true)) continue;
-            const d = desktopOf(w);
-            const t = targetOf(d);
-            const g = w.frameGeometry;
-            list.push({ window: w, desktop: d, x: g.x + t.x, y: g.y + t.y, width: g.width, height: g.height });
+            list.push(makeEntry(w));
         }
         entries = list;
         revision++;
+    }
+
+    // Follow the live state while the canvas is open: windows that appear,
+    // close, restack, or change geometry on their own. Existing entries keep
+    // their canvas position and absorb frame changes as deltas.
+    function resync() {
+        if (!visible) return;
+        const byId = {};
+        for (let i = 0; i < entries.length; ++i) byId[entries[i].window.internalId] = entries[i];
+        const list = [];
+        let changed = false;
+        const stack = KWin.Workspace.stackingOrder;
+        for (let i = 0; i < stack.length; ++i) {
+            const w = stack[i];
+            if (!isCanvasWindow(w, true)) continue;
+            let e = byId[w.internalId];
+            if (!e) { e = makeEntry(w); changed = true; }
+            else if (syncEntry(e)) changed = true;
+            list.push(e);
+        }
+        if (list.length !== entries.length) changed = true;
+        else for (let i = 0; i < list.length; ++i) if (list[i] !== entries[i]) changed = true;
+        if (changed) {
+            entries = list;
+            revision++;
+        }
+    }
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: effect.visible
+        onTriggered: effect.resync()
     }
 
     // ---- camera ops --------------------------------------------------------
@@ -295,6 +333,44 @@ KWin.SceneEffect {
         revision++;
     }
 
+    // Command the real window to a size while the canvas is open. Position is
+    // untouched. The client answers with whatever size it accepts, and
+    // syncSize() copies that back into the entry when the geometry changes.
+    function requestSize(index, w, h, anchorRight, anchorBottom) {
+        const e = entries[index];
+        if (!e || e.window.deleted) return;
+        e.anchorRight = anchorRight;
+        e.anchorBottom = anchorBottom;
+        const f = e.window.frameGeometry;
+        e.window.frameGeometry = Qt.rect(f.x, f.y, Math.max(50, Math.round(w)), Math.max(50, Math.round(h)));
+    }
+
+    // Absorb a window's real frame change into its entry. Returns true if anything moved.
+    function syncEntry(e) {
+        if (!e || e.window.deleted) return false;
+        const f = e.window.frameGeometry;
+        let changed = false;
+        if (f.x !== e.frameX || f.y !== e.frameY) {
+            e.x += f.x - e.frameX;
+            e.y += f.y - e.frameY;
+            e.frameX = f.x;
+            e.frameY = f.y;
+            changed = true;
+        }
+        if (f.width !== e.width || f.height !== e.height) {
+            if (e.anchorRight) e.x += e.width - f.width;
+            if (e.anchorBottom) e.y += e.height - f.height;
+            e.width = f.width;
+            e.height = f.height;
+            changed = true;
+        }
+        return changed;
+    }
+
+    function syncIndex(index) {
+        if (syncEntry(entries[index])) revision++;
+    }
+
     // ---- ground publication ------------------------------------------------
     KWin.DBusCall {
         id: groundCall
@@ -351,6 +427,8 @@ KWin.SceneEffect {
             const dy = Math.round(area.y + (area.height - g.height) / 2 - g.y);
             effect.shiftAll(dx, dy);
         }
+        function onWindowAdded(w) { if (effect.visible) Qt.callLater(effect.resync); }
+        function onWindowRemoved(w) { if (effect.visible) Qt.callLater(effect.resync); }
         // Switching desktops at 1:1 switches viewport: the ground follows.
         function onCurrentDesktopChanged() {
             if (effect.visible) return;
@@ -402,6 +480,7 @@ KWin.SceneEffect {
         }
         case "shift": shiftAll(Number(a[1]), Number(a[2])); break;
         case "drag": dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
+        case "resize": requestSize(Number(a[1]), Number(a[2]), Number(a[3]), false, false); break;
         case "place": {
             const e = entries[Number(a[1])];
             if (e) { e.x = Number(a[2]); e.y = Number(a[3]); revision++; }
@@ -537,6 +616,9 @@ KWin.SceneEffect {
                 // geometry bindings read the table directly and depend on
                 // revision to re-evaluate after dragEntry().
                 readonly property var entry: effect.entries[index]
+                // Grips under the pointer. The move and pick handlers stand
+                // down while this is non-zero so a press on a grip resizes.
+                property int gripHover: 0
                 x: { effect.revision; return (effect.entries[index].x - effect.viewX) * effect.zoom - view.sg.x; }
                 y: { effect.revision; return (effect.entries[index].y - effect.viewY) * effect.zoom - view.sg.y; }
                 width: { effect.revision; return effect.entries[index].width * effect.zoom; }
@@ -576,7 +658,7 @@ KWin.SceneEffect {
                 DragHandler {
                     id: winDrag
                     target: null
-                    enabled: !view.spaceHeld
+                    enabled: !view.spaceHeld && thumb.gripHover === 0
                     acceptedButtons: Qt.LeftButton
                     property point last: Qt.point(0, 0)
                     onActiveChanged: last = Qt.point(0, 0)
@@ -588,9 +670,72 @@ KWin.SceneEffect {
                 }
 
                 TapHandler {
-                    enabled: !view.spaceHeld
+                    enabled: !view.spaceHeld && thumb.gripHover === 0
                     acceptedButtons: Qt.LeftButton
                     onTapped: effect.pick(thumb.entry)
+                }
+
+                // The client decides the size it ends up with. Follow it.
+                Connections {
+                    target: thumb.entry.window
+                    function onFrameGeometryChanged() { effect.syncIndex(thumb.index); }
+                }
+
+                // Resize handles: four edges, four corners. Each drag step
+                // commands the real window to the new size.
+                Repeater {
+                    model: 8
+                    delegate: Item {
+                        id: grip
+                        required property int index
+                        readonly property int b: 6
+                        readonly property int c: 14
+                        readonly property bool north: index === 0 || index === 4 || index === 5
+                        readonly property bool south: index === 1 || index === 6 || index === 7
+                        readonly property bool west: index === 2 || index === 4 || index === 6
+                        readonly property bool east: index === 3 || index === 5 || index === 7
+                        readonly property bool corner: index >= 4
+                        x: corner ? (west ? 0 : thumb.width - c) : (west ? 0 : (east ? thumb.width - b : c))
+                        y: corner ? (north ? 0 : thumb.height - c) : (north ? 0 : (south ? thumb.height - b : c))
+                        width: corner ? c : ((west || east) ? b : Math.max(0, thumb.width - 2 * c))
+                        height: corner ? c : ((north || south) ? b : Math.max(0, thumb.height - 2 * c))
+                        z: 10
+
+                        HoverHandler {
+                            enabled: !view.spaceHeld
+                            cursorShape: grip.corner
+                                ? ((grip.north && grip.west) || (grip.south && grip.east) ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor)
+                                : ((grip.north || grip.south) ? Qt.SizeVerCursor : Qt.SizeHorCursor)
+                            onHoveredChanged: {
+                                view.hoverCount += hovered ? 1 : -1;
+                                thumb.gripHover += hovered ? 1 : -1;
+                            }
+                            Component.onDestruction: if (hovered) { view.hoverCount -= 1; thumb.gripHover -= 1; }
+                        }
+                        DragHandler {
+                            id: gripDrag
+                            target: null
+                            enabled: !view.spaceHeld
+                            acceptedButtons: Qt.LeftButton
+                            property real startW: 0
+                            property real startH: 0
+                            onActiveChanged: {
+                                if (active) {
+                                    startW = thumb.entry.width;
+                                    startH = thumb.entry.height;
+                                }
+                            }
+                            onActiveTranslationChanged: {
+                                const t = activeTranslation;
+                                let rw = startW, rh = startH;
+                                if (grip.east) rw = startW + t.x / effect.zoom;
+                                if (grip.west) rw = startW - t.x / effect.zoom;
+                                if (grip.south) rh = startH + t.y / effect.zoom;
+                                if (grip.north) rh = startH - t.y / effect.zoom;
+                                effect.requestSize(thumb.index, rw, rh, grip.west, grip.north);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -740,7 +885,7 @@ KWin.SceneEffect {
                 font.family: "monospace"
                 text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY)
                     + "   desktop " + KWin.Workspace.currentDesktop.name
-                    + "\ndrag ground or space+drag: pan   wheel: zoom   drag window: move   drag frame tag/edge: move that desktop's screens   click window: pick"
+                    + "\ndrag ground or space+drag: pan   wheel: zoom   drag window: move   drag window edge: resize   drag frame tag/edge: move that desktop's screens   click window: pick"
                     + "\nenter: apply   esc: cancel   home: look through frames   0: origin   f: fit"
             }
         }
