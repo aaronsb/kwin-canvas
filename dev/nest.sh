@@ -92,7 +92,7 @@ CFG
 $ACT1=Activity 1
 $ACT2=Activity 2
 CFG
-    mkdir -p "$STATE/state"
+    mkdir -p "$STATE/state" "$STATE/data"
     cat > "$STATE/state/kactivitymanagerdstaterc" <<CFG
 [main]
 currentActivity=$ACT1
@@ -157,9 +157,15 @@ up() {
     # dbus-run-session's, written from inside as its child's $PPID. The
     # environment goes on dbus-run-session itself, so the daemons the bus
     # activates (the activity manager above all) read the nest's config.
+    # The data home is the nest's too, so the activity manager's database
+    # is not the live session's; ~/.local/share stays on the search path
+    # for the installed packages. Clients launched with run() keep the
+    # user's data home, so the fixture apps look as they do at 1:1.
     (
         cd "$STATE"
-        setsid -f env XDG_CONFIG_HOME="$STATE/config" XDG_STATE_HOME="$STATE/state" QT_LOGGING_TO_CONSOLE=1 KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
+        setsid -f env XDG_CONFIG_HOME="$STATE/config" XDG_STATE_HOME="$STATE/state" \
+            XDG_DATA_HOME="$STATE/data" XDG_DATA_DIRS="$HOME/.local/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
+            QT_LOGGING_TO_CONSOLE=1 KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
             dbus-run-session -- bash -c '
             echo "$PPID" > "$0/pid"
             echo "$DBUS_SESSION_BUS_ADDRESS" > "$0/bus"
