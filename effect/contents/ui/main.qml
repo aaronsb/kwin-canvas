@@ -319,6 +319,7 @@ KWin.SceneEffect {
             let d = desktopAt(e);
             if (!d) d = e.desktop;
             if (d !== e.desktop && !e.window.onAllDesktops) e.window.desktops = [d];
+            e.desktop = d;
             const t = targetOf(d);
             e.window.frameGeometry = Qt.rect(Math.round(e.x - t.x), Math.round(e.y - t.y), e.width, e.height);
         }
@@ -532,6 +533,25 @@ KWin.SceneEffect {
         case "shift": shiftAll(Number(a[1]), Number(a[2])); break;
         case "drag": dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
         case "resize": requestSize(Number(a[1]), Number(a[2]), Number(a[3]), false, false); break;
+        case "resetview": {
+            // 1:1 only: forget the pan history so canvas == frame for this desktop.
+            if (visible) break;
+            viewX = 0; viewY = 0;
+            targets[KWin.Workspace.currentDesktop.id] = { x: 0, y: 0 };
+            break;
+        }
+        case "placeby": {
+            // placeby CAPTION_SUBSTR X Y [W H]: position (and size) an entry by caption.
+            for (let i = 0; i < entries.length; ++i) {
+                const e = entries[i];
+                if (e.window.caption.indexOf(a[1]) === -1) continue;
+                e.x = Number(a[2]); e.y = Number(a[3]);
+                if (a.length >= 6) requestSize(i, Number(a[4]), Number(a[5]), false, false);
+                revision++;
+                break;
+            }
+            break;
+        }
         case "place": {
             const e = entries[Number(a[1])];
             if (e) { e.x = Number(a[2]); e.y = Number(a[3]); revision++; }
@@ -603,23 +623,105 @@ KWin.SceneEffect {
         }
     }
 
-    // ---- frame tag ---------------------------------------------------------
-    // The desktop's name tag: drag handle for its frame group, plus the
-    // desktop controls KDE's pager has: add after, remove.
-    component FrameTag : Rectangle {
-        id: tag
+    // ---- controls ----------------------------------------------------------
+    // Every draggable thing on the canvas is a Grip and every clickable thing
+    // is an IconButton. Both count themselves into the view's hoverCount so
+    // the pan handler stands down while the pointer is over them, both set
+    // their own cursor, and both are disabled while Space is held.
+
+    component Grip : Item {
+        id: grip
         required property Item viewItem
+        property int cursor: Qt.ArrowCursor
+        property bool tappable: false
+        property alias buttons: gripDrag.acceptedButtons
+        readonly property bool hovered: gripHover.hovered
+        readonly property bool active: gripDrag.active
+        readonly property point total: gripDrag.activeTranslation
+        signal dragStarted()
+        signal dragged(real dx, real dy)
+        signal dragEnded()
+        signal tapped()
+
+        HoverHandler {
+            id: gripHover
+            enabled: !grip.viewItem.spaceHeld
+            cursorShape: gripDrag.active && grip.cursor === Qt.ArrowCursor ? Qt.ClosedHandCursor : grip.cursor
+            onHoveredChanged: grip.viewItem.hoverCount += hovered ? 1 : -1
+            Component.onDestruction: if (hovered) grip.viewItem.hoverCount -= 1
+        }
+        DragHandler {
+            id: gripDrag
+            target: null
+            enabled: !grip.viewItem.spaceHeld
+            acceptedButtons: Qt.LeftButton
+            property point last: Qt.point(0, 0)
+            onActiveChanged: {
+                last = Qt.point(0, 0);
+                if (active) grip.dragStarted(); else grip.dragEnded();
+            }
+            onActiveTranslationChanged: {
+                const t = activeTranslation;
+                grip.dragged(t.x - last.x, t.y - last.y);
+                last = t;
+            }
+        }
+        TapHandler {
+            enabled: grip.tappable && !grip.viewItem.spaceHeld
+            acceptedButtons: Qt.LeftButton
+            onTapped: grip.tapped()
+        }
+    }
+
+    component IconButton : Rectangle {
+        id: button
+        required property Item viewItem
+        property string icon: ""
+        property color hoverColor: "#60ffffff"
+        signal clicked()
+        width: 18
+        height: 18
+        radius: 3
+        color: buttonHover.hovered ? hoverColor : "#30ffffff"
+        Kirigami.Icon {
+            anchors.fill: parent
+            anchors.margins: 2
+            source: button.icon
+            color: "#ffffff"
+        }
+        HoverHandler {
+            id: buttonHover
+            cursorShape: Qt.PointingHandCursor
+            onHoveredChanged: button.viewItem.hoverCount += hovered ? 1 : -1
+            Component.onDestruction: if (hovered) button.viewItem.hoverCount -= 1
+        }
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.ReleaseWithinBounds
+            onTapped: button.clicked()
+        }
+    }
+
+    // The desktop's name tag: a Grip for its frame group, plus the desktop
+    // controls KDE's pager has: add after, remove.
+    component FrameTag : Grip {
+        id: tag
         required property var desktop
         required property int desktopIndex
         required property var screen
         readonly property bool current: desktop === KWin.Workspace.currentDesktop
         readonly property color accent: effect.palette[desktopIndex % effect.palette.length]
+        cursor: Qt.SizeAllCursor
         width: tagRow.implicitWidth + 12
         height: tagRow.implicitHeight + 6
-        radius: 3
-        color: accent
-        opacity: current ? 1 : 0.8
+        onDragged: (dx, dy) => effect.dragTarget(desktop, dx, dy)
 
+        Rectangle {
+            anchors.fill: parent
+            radius: 3
+            color: tag.accent
+            opacity: tag.current ? 1 : 0.8
+        }
         Row {
             id: tagRow
             anchors.centerIn: parent
@@ -631,65 +733,19 @@ KWin.SceneEffect {
                 font.pixelSize: 12
                 font.bold: true
             }
-            Rectangle {
+            IconButton {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 18; height: 18; radius: 3
-                color: addHover.hovered ? "#60ffffff" : "#30ffffff"
-                Kirigami.Icon {
-                    anchors.fill: parent
-                    anchors.margins: 2
-                    source: "list-add"
-                    color: "#ffffff"
-                }
-                HoverHandler {
-                    id: addHover
-                    onHoveredChanged: tag.viewItem.hoverCount += hovered ? 1 : -1
-                    Component.onDestruction: if (hovered) tag.viewItem.hoverCount -= 1
-                }
-                TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: effect.addDesktopAfter(tag.desktop)
-                }
+                viewItem: tag.viewItem
+                icon: "list-add"
+                onClicked: effect.addDesktopAfter(tag.desktop)
             }
-            Rectangle {
+            IconButton {
                 visible: tag.desktopIndex > 0
                 anchors.verticalCenter: parent.verticalCenter
-                width: 18; height: 18; radius: 3
-                color: removeHover.hovered ? "#80ff4040" : "#30ffffff"
-                Kirigami.Icon {
-                    anchors.fill: parent
-                    anchors.margins: 2
-                    source: "edit-delete"
-                    color: "#ffffff"
-                }
-                HoverHandler {
-                    id: removeHover
-                    onHoveredChanged: tag.viewItem.hoverCount += hovered ? 1 : -1
-                    Component.onDestruction: if (hovered) tag.viewItem.hoverCount -= 1
-                }
-                TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    gesturePolicy: TapHandler.ReleaseWithinBounds
-                    onTapped: effect.removeDesktop(tag.desktop)
-                }
-            }
-        }
-        HoverHandler {
-            cursorShape: Qt.SizeAllCursor
-            onHoveredChanged: tag.viewItem.hoverCount += hovered ? 1 : -1
-            Component.onDestruction: if (hovered) tag.viewItem.hoverCount -= 1
-        }
-        DragHandler {
-            target: null
-            enabled: !tag.viewItem.spaceHeld
-            acceptedButtons: Qt.LeftButton
-            property point last: Qt.point(0, 0)
-            onActiveChanged: last = Qt.point(0, 0)
-            onActiveTranslationChanged: {
-                const t = activeTranslation;
-                effect.dragTarget(tag.desktop, t.x - last.x, t.y - last.y);
-                last = t;
+                viewItem: tag.viewItem
+                icon: "edit-delete"
+                hoverColor: "#80ff4040"
+                onClicked: effect.removeDesktop(tag.desktop)
             }
         }
     }
@@ -699,11 +755,11 @@ KWin.SceneEffect {
         id: view
         readonly property rect sg: KWin.SceneView.screen.geometry
         property bool spaceHeld: false
-        // Number of grabbable things (windows, frame handles) under the pointer.
-        // The pan handler refuses a left press while this is non-zero, so a drag
-        // that starts on one of them moves it instead of racing the pan.
+        // Number of grips and buttons under the pointer. The pan handler
+        // refuses a left press while this is non-zero, so a drag that starts
+        // on one of them acts on it instead of racing the pan.
         property int hoverCount: 0
-        readonly property bool overWindow: hoverCount > 0
+        readonly property bool overControl: hoverCount > 0
         focus: true
         Connections {
             target: effect
@@ -724,11 +780,11 @@ KWin.SceneEffect {
         }
 
         // Pan: left-drag on the ground, middle-drag anywhere, or hold Space and
-        // left-drag anywhere (Space disables the other handlers).
+        // left-drag anywhere (Space disables every Grip and IconButton).
         DragHandler {
             id: panDrag
             target: null
-            acceptedButtons: (view.spaceHeld || !view.overWindow) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
+            acceptedButtons: (view.spaceHeld || !view.overControl) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
             cursorShape: active ? Qt.ClosedHandCursor : (view.spaceHeld ? Qt.OpenHandCursor : Qt.ArrowCursor)
             property point last: Qt.point(0, 0)
             onActiveChanged: last = Qt.point(0, 0)
@@ -750,140 +806,6 @@ KWin.SceneEffect {
             }
         }
 
-        // Windows.
-        Repeater {
-            model: effect.entries.length
-            delegate: Item {
-                id: thumb
-                required property int index
-                // The entry object keeps its identity across drags, so the
-                // geometry bindings read the table directly and depend on
-                // revision to re-evaluate after dragEntry().
-                readonly property var entry: effect.entries[index]
-                // Grips under the pointer. The move and pick handlers stand
-                // down while this is non-zero so a press on a grip resizes.
-                property int gripHover: 0
-                x: { effect.revision; return (effect.entries[index].x - effect.viewX) * effect.zoom - view.sg.x; }
-                y: { effect.revision; return (effect.entries[index].y - effect.viewY) * effect.zoom - view.sg.y; }
-                width: { effect.revision; return effect.entries[index].width * effect.zoom; }
-                height: { effect.revision; return effect.entries[index].height * effect.zoom; }
-                z: 1000 + index
-
-                KWin.WindowThumbnail {
-                    anchors.fill: parent
-                    client: thumb.entry.window
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    color: "transparent"
-                    border.width: hover.hovered || winDrag.active ? 2 : 1
-                    border.color: hover.hovered || winDrag.active ? "#ffffff" : "#40ffffff"
-                }
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.bottom: parent.top
-                    anchors.bottomMargin: 2
-                    text: thumb.entry.window.caption
-                    color: "#ffffff"
-                    font.pixelSize: 12
-                    visible: effect.zoom < 0.6 || hover.hovered
-                    style: Text.Outline
-                    styleColor: "#000000"
-                }
-
-                HoverHandler {
-                    id: hover
-                    onHoveredChanged: view.hoverCount += hovered ? 1 : -1
-                    Component.onDestruction: if (hovered) view.hoverCount -= 1
-                }
-
-                DragHandler {
-                    id: winDrag
-                    target: null
-                    enabled: !view.spaceHeld && thumb.gripHover === 0
-                    acceptedButtons: Qt.LeftButton
-                    property point last: Qt.point(0, 0)
-                    onActiveChanged: last = Qt.point(0, 0)
-                    onActiveTranslationChanged: {
-                        const t = activeTranslation;
-                        effect.dragEntry(thumb.index, t.x - last.x, t.y - last.y);
-                        last = t;
-                    }
-                }
-
-                TapHandler {
-                    enabled: !view.spaceHeld && thumb.gripHover === 0
-                    acceptedButtons: Qt.LeftButton
-                    onTapped: effect.pick(thumb.entry)
-                }
-
-                // The client decides the size it ends up with. Follow it.
-                Connections {
-                    target: thumb.entry.window
-                    function onFrameGeometryChanged() { effect.syncIndex(thumb.index); }
-                }
-
-                // Resize handles: four edges, four corners. Each drag step
-                // commands the real window to the new size.
-                Repeater {
-                    model: 8
-                    delegate: Item {
-                        id: grip
-                        required property int index
-                        readonly property int b: 6
-                        readonly property int c: 14
-                        readonly property bool north: index === 0 || index === 4 || index === 5
-                        readonly property bool south: index === 1 || index === 6 || index === 7
-                        readonly property bool west: index === 2 || index === 4 || index === 6
-                        readonly property bool east: index === 3 || index === 5 || index === 7
-                        readonly property bool corner: index >= 4
-                        x: corner ? (west ? 0 : thumb.width - c) : (west ? 0 : (east ? thumb.width - b : c))
-                        y: corner ? (north ? 0 : thumb.height - c) : (north ? 0 : (south ? thumb.height - b : c))
-                        width: corner ? c : ((west || east) ? b : Math.max(0, thumb.width - 2 * c))
-                        height: corner ? c : ((north || south) ? b : Math.max(0, thumb.height - 2 * c))
-                        z: 10
-
-                        HoverHandler {
-                            enabled: !view.spaceHeld
-                            cursorShape: grip.corner
-                                ? ((grip.north && grip.west) || (grip.south && grip.east) ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor)
-                                : ((grip.north || grip.south) ? Qt.SizeVerCursor : Qt.SizeHorCursor)
-                            onHoveredChanged: {
-                                view.hoverCount += hovered ? 1 : -1;
-                                thumb.gripHover += hovered ? 1 : -1;
-                            }
-                            Component.onDestruction: if (hovered) { view.hoverCount -= 1; thumb.gripHover -= 1; }
-                        }
-                        DragHandler {
-                            id: gripDrag
-                            target: null
-                            enabled: !view.spaceHeld
-                            acceptedButtons: Qt.LeftButton
-                            property real startW: 0
-                            property real startH: 0
-                            onActiveChanged: {
-                                if (active) {
-                                    startW = thumb.entry.width;
-                                    startH = thumb.entry.height;
-                                }
-                            }
-                            onActiveTranslationChanged: {
-                                const t = activeTranslation;
-                                let rw = startW, rh = startH;
-                                if (grip.east) rw = startW + t.x / effect.zoom;
-                                if (grip.west) rw = startW - t.x / effect.zoom;
-                                if (grip.south) rh = startH + t.y / effect.zoom;
-                                if (grip.north) rh = startH - t.y / effect.zoom;
-                                effect.requestSize(thumb.index, rw, rh, grip.west, grip.north);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // Z order, back to front: ground, monitor frames with their real
         // desktop background, windows in KWin's stacking order, frame tags, HUD.
 
@@ -898,7 +820,6 @@ KWin.SceneEffect {
                 required property var modelData
                 required property int index
                 readonly property var desktop: modelData
-                readonly property int desktopIndex: index
                 readonly property bool current: modelData === KWin.Workspace.currentDesktop
                 readonly property color accent: effect.palette[index % effect.palette.length]
                 model: KWin.Workspace.screens
@@ -937,33 +858,118 @@ KWin.SceneEffect {
                         opacity: desktopFrames.current ? 0.95 : 0.6
                     }
 
-                    // Edge bands: drag handles for the whole group.
+                    // Edge bands: grips for the whole group.
                     Repeater {
                         model: 4
-                        delegate: Item {
+                        delegate: Grip {
                             required property int index
                             readonly property int band: 8
+                            viewItem: view
+                            cursor: Qt.SizeAllCursor
                             x: index === 1 ? frame.width - band : 0
                             y: index === 3 ? frame.height - band : 0
                             width: (index === 0 || index === 2) ? frame.width : band
                             height: (index === 1 || index === 3) ? frame.height : band
-                            HoverHandler {
-                                cursorShape: Qt.SizeAllCursor
-                                onHoveredChanged: view.hoverCount += hovered ? 1 : -1
-                                Component.onDestruction: if (hovered) view.hoverCount -= 1
-                            }
-                            DragHandler {
-                                target: null
-                                enabled: !view.spaceHeld
-                                acceptedButtons: Qt.LeftButton
-                                property point last: Qt.point(0, 0)
-                                onActiveChanged: last = Qt.point(0, 0)
-                                onActiveTranslationChanged: {
-                                    const t = activeTranslation;
-                                    effect.dragTarget(desktopFrames.desktop, t.x - last.x, t.y - last.y);
-                                    last = t;
-                                }
-                            }
+                            onDragged: (dx, dy) => effect.dragTarget(desktopFrames.desktop, dx, dy)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Windows.
+        Repeater {
+            model: effect.entries.length
+            delegate: Item {
+                id: thumb
+                required property int index
+                // The entry object keeps its identity across drags, so the
+                // geometry bindings read the table directly and depend on
+                // revision to re-evaluate after dragEntry().
+                readonly property var entry: effect.entries[index]
+                x: { effect.revision; return (effect.entries[index].x - effect.viewX) * effect.zoom - view.sg.x; }
+                y: { effect.revision; return (effect.entries[index].y - effect.viewY) * effect.zoom - view.sg.y; }
+                width: { effect.revision; return effect.entries[index].width * effect.zoom; }
+                height: { effect.revision; return effect.entries[index].height * effect.zoom; }
+                z: 1000 + index
+
+                KWin.WindowThumbnail {
+                    anchors.fill: parent
+                    client: thumb.entry.window
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "transparent"
+                    border.width: body.hovered || body.active ? 2 : 1
+                    border.color: body.hovered || body.active ? "#ffffff" : "#40ffffff"
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.bottom: parent.top
+                    anchors.bottomMargin: 2
+                    text: thumb.entry.window.caption
+                    color: "#ffffff"
+                    font.pixelSize: 12
+                    visible: effect.zoom < 0.6 || body.hovered
+                    style: Text.Outline
+                    styleColor: "#000000"
+                }
+
+                // The client decides the size it ends up with. Follow it.
+                Connections {
+                    target: thumb.entry.window
+                    function onFrameGeometryChanged() { effect.syncIndex(thumb.index); }
+                }
+
+                // Body: move on drag, pick on click.
+                Grip {
+                    id: body
+                    anchors.fill: parent
+                    viewItem: view
+                    tappable: true
+                    onDragged: (dx, dy) => effect.dragEntry(thumb.index, dx, dy)
+                    onTapped: effect.pick(thumb.entry)
+                }
+
+                // Resize grips: four edges, four corners, above the body. Each
+                // drag step commands the real window to the new size.
+                Repeater {
+                    model: 8
+                    delegate: Grip {
+                        id: grip
+                        required property int index
+                        readonly property int b: 6
+                        readonly property int c: 14
+                        readonly property bool north: index === 0 || index === 4 || index === 5
+                        readonly property bool south: index === 1 || index === 6 || index === 7
+                        readonly property bool west: index === 2 || index === 4 || index === 6
+                        readonly property bool east: index === 3 || index === 5 || index === 7
+                        readonly property bool corner: index >= 4
+                        property real startW: 0
+                        property real startH: 0
+                        viewItem: view
+                        z: 10
+                        x: corner ? (west ? 0 : thumb.width - c) : (west ? 0 : (east ? thumb.width - b : c))
+                        y: corner ? (north ? 0 : thumb.height - c) : (north ? 0 : (south ? thumb.height - b : c))
+                        width: corner ? c : ((west || east) ? b : Math.max(0, thumb.width - 2 * c))
+                        height: corner ? c : ((north || south) ? b : Math.max(0, thumb.height - 2 * c))
+                        cursor: corner
+                            ? ((north && west) || (south && east) ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor)
+                            : ((north || south) ? Qt.SizeVerCursor : Qt.SizeHorCursor)
+                        onDragStarted: {
+                            startW = thumb.entry.width;
+                            startH = thumb.entry.height;
+                        }
+                        onDragged: {
+                            const t = grip.total;
+                            let rw = startW, rh = startH;
+                            if (east) rw = startW + t.x / effect.zoom;
+                            if (west) rw = startW - t.x / effect.zoom;
+                            if (south) rh = startH + t.y / effect.zoom;
+                            if (north) rh = startH - t.y / effect.zoom;
+                            effect.requestSize(thumb.index, rw, rh, west, north);
                         }
                     }
                 }

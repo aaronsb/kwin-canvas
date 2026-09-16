@@ -15,22 +15,41 @@
 #   dev/nest.sh state         print effect state from the log
 #   dev/nest.sh reload        reinstall, restart the nest, relaunch clients
 #   dev/nest.sh clients       launch the default test clients (NEST_CLIENTS)
+#   dev/nest.sh fixtures      launch the fixture set of KDE apps on fixture files
+#   dev/nest.sh input CMDS    inject pointer/keyboard events (see tools/fakeinput.c)
+#   dev/nest.sh clean         kill leftovers of nests whose state is gone
+#   dev/nest.sh shell         start plasmashell in the nest (up does this; NEST_SHELL=0 skips)
+#
+# NEST_NAME=foo runs a second, independent nest (own socket, bus, config, log).
+# NEST_WALLPAPER=0 keeps the plain grid instead of tiling the fixture wallpaper.
+# The file is sourceable: `source dev/nest.sh` exposes every function without
+# running a command, which is how tests/lib.sh reuses it.
 #
 # Debug commands: open commit cancel toggle home extents state
 #                 pan DX DY | zoom Z [X Y] | shift DX DY
 set -euo pipefail
 
-HERE=$(cd "$(dirname "$0")/.." && pwd)
-STATE=${XDG_RUNTIME_DIR:-/tmp}/kwin-canvas-nest
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+NEST_NAME=${NEST_NAME:-kwincanvas}
+STATE=${XDG_RUNTIME_DIR:-/tmp}/kwin-canvas-nest-$NEST_NAME
 CONF=$STATE/config
-SOCKET=wayland-kwincanvas
+SOCKET=wayland-$NEST_NAME
 WIDTH=${NEST_WIDTH:-1920}
 HEIGHT=${NEST_HEIGHT:-1080}
 LOG=$STATE/kwin.log
+FIXTURES=$HERE/tests/fixtures
 
 bus() { cat "$STATE/bus" 2>/dev/null; }
 nq() { DBUS_SESSION_BUS_ADDRESS=$(bus) qdbus6 "$@"; }
 alive() { [ -f "$STATE/pid" ] && kill -0 "$(cat "$STATE/pid")" 2>/dev/null; }
+
+# The fixture wallpaper for a space (1-based). NEST_WALLPAPER=0 disables
+# image wallpapers and leaves the Canvas Ground grid at 1:1.
+wallpaper_file() {
+    [ "${NEST_WALLPAPER:-1}" = 1 ] || { echo ""; return; }
+    [ -f "$FIXTURES/wallpaper-${1:-1}.png" ] || python3 "$FIXTURES/gen.py" >/dev/null
+    echo "file://$FIXTURES/wallpaper-${1:-1}.png"
+}
 
 seed_config() {
     mkdir -p "$CONF"
@@ -43,7 +62,7 @@ blurEnabled=false
 contrastEnabled=false
 
 [Effect-kwin-canvas]
-PublishGround=false
+PublishGround=true
 DebugSeq=0
 ToggleShortcut=Ctrl+Alt+Space
 HomeShortcut=Ctrl+Alt+Home
@@ -57,18 +76,68 @@ Rows=1
 CFG
 }
 
+# plasmashell inside the nest, shaped through its scripting interface after it
+# starts: no panels, the Canvas Ground wallpaper, and a folder view on an
+# empty directory. This is the same evaluateScript path the effect uses to
+# publish the ground offset, so the handoff is exercised on every nest.
+shell() {
+    [ "${NEST_SHELL:-1}" = 1 ] || return 0
+    mkdir -p "$STATE/desktop"
+    run plasmashell --no-respawn >/dev/null
+    local ok=0
+    for _ in $(seq 1 60); do
+        nq org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "1" >/dev/null 2>&1 && { ok=1; break; }
+        sleep 0.25
+    done
+    [ "$ok" = 1 ] || { echo "plasmashell did not come up; see: dev/nest.sh log"; return 1; }
+    local wp; wp=$(wallpaper_file 1)
+    if [ -n "$wp" ]; then
+        # Stock image wallpaper: the frame interior is a real picture, and
+        # 1:1 is that picture. The ground grid lives in the effect only.
+        nq org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+            for (const p of panels()) p.remove();
+            let i = 0;
+            for (const d of desktops()) {
+                d.currentConfigGroup = ['General'];
+                d.writeConfig('url', 'file://$STATE/desktop');
+                d.wallpaperPlugin = 'org.kde.image';
+                d.currentConfigGroup = ['Wallpaper', 'org.kde.image', 'General'];
+                d.writeConfig('Image', 'file://$FIXTURES/wallpaper-' + ((i % 4) + 1) + '.png');
+                d.writeConfig('FillMode', 2);
+                d.reloadConfig();
+                i++;
+            }" >/dev/null
+    else
+        nq org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+            for (const p of panels()) p.remove();
+            for (const d of desktops()) {
+                d.currentConfigGroup = ['General'];
+                d.writeConfig('url', 'file://$STATE/desktop');
+                d.wallpaperPlugin = 'kwin-canvas-ground';
+                d.currentConfigGroup = ['Wallpaper', 'kwin-canvas-ground', 'General'];
+                d.writeConfig('OffsetX', 0);
+                d.writeConfig('OffsetY', 0);
+                d.reloadConfig();
+            }" >/dev/null
+    fi
+    echo "plasmashell up"
+}
+
 up() {
     if alive; then echo "already up (pid $(cat "$STATE/pid"))"; return; fi
-    mkdir -p "$STATE"; rm -f "$STATE/bus"
+    mkdir -p "$STATE"; rm -f "$STATE/bus" "$STATE/clients" "$STATE/pid"
     seed_config
+    # setsid: the nest gets its own session so nothing that happens to the
+    # shell or make that started it can reap it. The pid recorded is
+    # dbus-run-session's, written from inside as its child's $PPID.
     (
         cd "$STATE"
-        dbus-run-session -- bash -c '
+        setsid -f dbus-run-session -- bash -c '
+            echo "$PPID" > "$0/pid"
             echo "$DBUS_SESSION_BUS_ADDRESS" > "$0/bus"
-            exec env XDG_CONFIG_HOME="$0/config" QT_LOGGING_TO_CONSOLE=1 \
+            exec env XDG_CONFIG_HOME="$0/config" QT_LOGGING_TO_CONSOLE=1 KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
                 kwin_wayland --width '"$WIDTH"' --height '"$HEIGHT"' --xwayland --no-lockscreen --no-kactivities --socket '"$SOCKET"'
-        ' "$STATE" > "$LOG" 2>&1 &
-        echo $! > "$STATE/pid"
+        ' "$STATE" > "$LOG" 2>&1
     )
     for _ in $(seq 1 50); do
         [ -f "$STATE/bus" ] && nq org.kde.KWin /KWin org.kde.KWin.supportInformation >/dev/null 2>&1 && break
@@ -79,20 +148,66 @@ up() {
     else
         echo "nested KWin up but effect NOT loaded; see: dev/nest.sh log"
     fi
+    shell
+}
+
+# Every process attached to the nest's private bus: the compositor, the
+# clients launched into it, and the daemons D-Bus activated there (portals,
+# kactivitymanagerd, kglobalacceld). Those daemons outlive the bus otherwise.
+pids_on_bus() {   # pids_on_bus BUS_ADDRESS
+    local addr=$1 p
+    for p in /proc/[0-9]*; do
+        if cat "$p/environ" 2>/dev/null | tr '\0' '\n' | grep -qxF "DBUS_SESSION_BUS_ADDRESS=$addr"; then
+            echo "${p#/proc/}"
+        fi
+    done
 }
 
 down() {
+    local addr; addr=$(bus)
     if [ -f "$STATE/pid" ]; then
         pkill -P "$(cat "$STATE/pid")" 2>/dev/null || true
         kill "$(cat "$STATE/pid")" 2>/dev/null || true
-        rm -f "$STATE/pid" "$STATE/bus"
-        echo "down"
     fi
+    if [ -n "$addr" ]; then
+        local pids; pids=$(pids_on_bus "$addr")
+        [ -n "$pids" ] && kill $pids 2>/dev/null
+        sleep 0.3
+        pids=$(pids_on_bus "$addr")
+        [ -n "$pids" ] && kill -9 $pids 2>/dev/null
+    fi
+    rm -f "$STATE/pid" "$STATE/bus" "$STATE/clients"
+    echo "down"
+}
+
+# Kill leftovers from nests whose state is gone: anything on a private bus
+# that is neither the live session bus nor a running nest's bus.
+clean() {
+    local live=${DBUS_SESSION_BUS_ADDRESS:-} keep="" f p addr n=0
+    for f in "${XDG_RUNTIME_DIR:-/tmp}"/kwin-canvas-nest-*/bus; do
+        [ -f "$f" ] && keep="$keep $(cat "$f")"
+    done
+    for p in /proc/[0-9]*; do
+        addr=$(cat "$p/environ" 2>/dev/null | tr '\0' '\n' | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+        [ -n "$addr" ] || continue
+        [ "$addr" = "$live" ] && continue
+        case "$addr" in unix:path=/tmp/dbus-*|unix:abstract=/tmp/dbus-*) ;; *) continue ;; esac
+        case " $keep " in *" $addr "*) continue ;; esac
+        kill "${p#/proc/}" 2>/dev/null && n=$((n + 1))
+    done
+    # Nested compositors with no state file left.
+    for p in $(pgrep -f "kwin_wayland .*--socket wayland-" ); do
+        local sock; sock=$(cat /proc/$p/cmdline 2>/dev/null | tr '\0' '\n' | grep -A1 -x -- --socket | tail -1)
+        [ "$sock" = "wayland-0" ] && continue
+        [ -f "${XDG_RUNTIME_DIR:-/tmp}/kwin-canvas-nest-${sock#wayland-}/pid" ] && continue
+        kill "$p" 2>/dev/null && n=$((n + 1))
+    done
+    echo "cleaned $n orphaned processes"
 }
 
 run() {
     alive || { echo "not up"; exit 1; }
-    ( export WAYLAND_DISPLAY=$SOCKET DBUS_SESSION_BUS_ADDRESS=$(bus) XDG_CONFIG_HOME=$CONF; unset DISPLAY; "$@" >/dev/null 2>&1 & )
+    ( export WAYLAND_DISPLAY=$SOCKET DBUS_SESSION_BUS_ADDRESS=$(bus) XDG_CONFIG_HOME=$CONF; unset DISPLAY; "$@" >/dev/null 2>&1 & echo $! >> "$STATE/clients" )
     echo "launched: $*"
 }
 
@@ -145,6 +260,36 @@ clients() {
     echo "clients: ${NEST_CLIENTS:-kcalc konsole kwrite}"
 }
 
+# A typical set of KDE apps opened on fixture files, so their content is the
+# same on every run. Captions: KCalc, sample.txt — KWrite, Konsole,
+# fixtures — Dolphin, wallpaper.png – Gwenview.
+fixtures() {
+    [ -f "$FIXTURES/wallpaper.png" ] || python3 "$FIXTURES/gen.py" >/dev/null
+    run kcalc >/dev/null
+    run kwrite "$FIXTURES/sample.txt" >/dev/null
+    run konsole -e sh -c "cat '$FIXTURES/konsole.txt'; exec sleep 1d" >/dev/null
+    run dolphin "$FIXTURES" >/dev/null
+    run gwenview "$FIXTURES/wallpaper.png" >/dev/null
+    sleep 4
+    echo "fixtures: kcalc kwrite konsole dolphin gwenview"
+}
+
+# Inject input through KWin's fake-input protocol. Commands on stdin, or as
+# arguments for a single command: move X Y | drag X1 Y1 X2 Y2 | wheel N |
+# click | key NAME | sleep MS. Built by `make tools`.
+input() {
+    local bin=$HERE/build/tools/fakeinput
+    [ -x "$bin" ] || { echo "fakeinput not built: make tools" >&2; return 1; }
+    if [ $# -gt 0 ]; then
+        WAYLAND_DISPLAY=$SOCKET "$bin" "$@"
+    else
+        WAYLAND_DISPLAY=$SOCKET "$bin"
+    fi
+}
+
+# Only dispatch when executed, so the file can be sourced for its functions.
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0 2>/dev/null
+
 case "${1:-}" in
     up) up ;;
     down) down ;;
@@ -156,6 +301,10 @@ case "${1:-}" in
     state) state ;;
     reload) reload ;;
     clients) clients ;;
+    fixtures) fixtures ;;
+    clean) clean ;;
+    shell) shell ;;
+    input) shift; input "$@" ;;
     bus) bus ;;
     *) sed -n '2,20p' "$0"; exit 1 ;;
 esac

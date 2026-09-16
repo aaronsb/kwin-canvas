@@ -66,14 +66,27 @@ comes on screen.
 
 ## Develop
 
+`make` alone lists every target. The important ones:
+
 ```bash
-./dev/nest.sh up          # nested KWin, effect enabled, own D-Bus bus
-./dev/nest.sh clients     # kcalc konsole kwrite inside it
-./dev/nest.sh cmd open    # drive the effect without a mouse
-./dev/nest.sh cmd "zoom 0.4 960 540"
-./dev/nest.sh shot        # screenshot of the nested session
-./dev/nest.sh reload      # reinstall, restart the nest, relaunch clients
+make deps             # check tools; make deps-install fetches what is missing
+make nest             # nested KWin with the effect and plasmashell inside, on its own D-Bus bus
+make nest-fixtures    # kcalc, kwrite, konsole, dolphin, gwenview on fixture files
+make nest-cmd CMD=open           # drive the effect without a mouse
+make nest-cmd CMD="zoom 0.4 960 540"
+make nest-shot        # screenshot of the nest
+make nest-reload      # reinstall, restart the nest, relaunch clients
+make test             # scenarios against a dedicated test nest, with golden screenshots
+make golden           # re-record the golden screenshots
+make demo             # scripted session driven by real input; stills, frames, mp4 and gif in build/demo
 ```
+
+The nest is a second `kwin_wayland` as a window of your session, with its own
+D-Bus bus, config and plasmashell, so nothing touches the real desktop. Inside
+it the canvas chords are Ctrl+Alt+Space and Ctrl+Alt+Home, because the outer
+desktop sees Meta chords first. `build/tools/fakeinput` injects pointer and
+keyboard events into it through KWin's fake-input protocol, which is how the
+tests and the demo drive it.
 
 See [docs/architecture.md](docs/architecture.md) for the model and the KWin
 API facts this rests on, and [docs/testing.md](docs/testing.md) for the harness.

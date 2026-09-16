@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=kwin-canvas fakeinput
+Comment=Test-input injector for kwin-canvas. KWin exposes org_kde_kwin_fake_input only to executables whose desktop file lists it in X-KDE-Wayland-Interfaces.
+Exec=@BIN@
+X-KDE-Wayland-Interfaces=org_kde_kwin_fake_input
+NoDisplay=true
+Terminal=true
