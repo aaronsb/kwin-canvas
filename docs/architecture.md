@@ -164,6 +164,17 @@ into key codes at load and on every reconfigure by looking up `Qt["Key_" +
 name]`, and the legend is rendered from the same entries. A misspelt name is
 logged and skipped.
 
+## Arranging a selection
+
+`arrange(mode, rows, cols)` acts on the selection, or on the window the menu
+was opened on: horizontal and vertical lay windows out from the selection's
+bounding-box corner with `ArrangeGap` between them, cascade steps them by 40,
+and tile or grid split the bounding box into cells and command each window to
+its cell through `requestSize`. The menu is a `PC3.Menu` opened at the pointer
+by the `MouseContextMenu` gesture, the first gesture spec to carry a button.
+Attached properties inside a `Connections` handler resolve against the
+`Connections` object, so the handler reads the screen through the view.
+
 ## Screen edges
 
 `X-KWin-Border-Activate` in the metadata puts the effect into the Screen

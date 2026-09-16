@@ -107,6 +107,14 @@
             <label>Gesture on a window that toggles its selection.</label>
             <default>Ctrl+Click</default>
         </entry>
+        <entry name="MouseContextMenu" type="String">
+            <label>Gesture on a window that opens the arrange menu for the selection.</label>
+            <default>RightClick</default>
+        </entry>
+        <entry name="ArrangeGap" type="Int">
+            <label>Gap in canvas pixels between arranged windows.</label>
+            <default>16</default>
+        </entry>
         <entry name="MouseNewDesktopAt" type="String">
             <label>Gesture on a window outside every frame that creates a desktop centred on it.</label>
             <default>Shift+DoubleClick</default>

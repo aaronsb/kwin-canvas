@@ -123,30 +123,33 @@ KWin.SceneEffect {
 
     // Mouse gestures: "Shift+DoubleClick" -> { count: 2, mods: Qt.ShiftModifier }.
     function gestureFor(spec) {
-        let count = 0, mods = 0;
+        let count = 0, mods = 0, button = Qt.LeftButton;
         const parts = String(spec || "").split("+");
         for (let i = 0; i < parts.length; ++i) {
             const p = parts[i].trim().toLowerCase();
             if (p === "click") count = 1;
             else if (p === "doubleclick") count = 2;
+            else if (p === "rightclick") { count = 1; button = Qt.RightButton; }
+            else if (p === "middleclick") { count = 1; button = Qt.MiddleButton; }
             else if (p === "shift") mods |= Qt.ShiftModifier;
             else if (p === "ctrl" || p === "control") mods |= Qt.ControlModifier;
             else if (p === "alt") mods |= Qt.AltModifier;
             else if (p === "meta") mods |= Qt.MetaModifier;
             else if (p) console.warn("kwin-canvas: unknown gesture part", p);
         }
-        return { count: count, mods: mods };
+        return { count: count, mods: mods, button: button };
     }
 
-    function gestureMatches(spec, count, modifiers) {
+    function gestureMatches(spec, count, modifiers, button) {
         const g = gestureFor(spec);
         if (g.count === 0 || count !== g.count) return false;
+        if ((button || Qt.LeftButton) !== g.button) return false;
         const mask = Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
         return (modifiers & mask) === g.mods;
     }
 
     function gestureLabel(spec) {
-        return String(spec || "").replace(/DoubleClick/i, "double-click").replace(/Click/, "click").toLowerCase();
+        return String(spec || "").replace(/DoubleClick/i, "double-click").replace(/RightClick/i, "right-click").replace(/MiddleClick/i, "middle-click").replace(/Click/, "click").toLowerCase();
     }
 
     // Legend text for an action: the configured names, lower-cased.
@@ -536,9 +539,71 @@ KWin.SceneEffect {
         commit(entry.window);
     }
 
+    // ---- arrange the selection ----------------------------------------------
+    // Entries to arrange: the selection, or the one window the menu was opened on.
+    property var contextEntry: null
+    function arrangeTargets() {
+        const out = [];
+        for (let i = 0; i < entries.length; ++i) if (isSelected(entries[i])) out.push(entries[i]);
+        if (out.length === 0 && contextEntry) out.push(contextEntry);
+        out.sort(function (a, b) { return (a.y - b.y) || (a.x - b.x); });
+        return out;
+    }
+
+    function bbox(list) {
+        let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+        for (let i = 0; i < list.length; ++i) {
+            const e = list[i];
+            l = Math.min(l, e.x); t = Math.min(t, e.y); r = Math.max(r, e.x + e.width); b = Math.max(b, e.y + e.height);
+        }
+        return { x: l, y: t, width: r - l, height: b - t };
+    }
+
+    // arrange MODE [ROWS COLS]: horizontal, vertical, cascade keep sizes;
+    // tile and grid split the selection's bounding box into cells and
+    // command each window to its cell.
+    function arrange(mode, rows, cols) {
+        const list = arrangeTargets();
+        if (list.length === 0) return;
+        const gap = configuration.ArrangeGap;
+        const box = bbox(list);
+        if (mode === "horizontal") {
+            let x = box.x;
+            for (let i = 0; i < list.length; ++i) { list[i].x = x; list[i].y = box.y; x += list[i].width + gap; }
+        } else if (mode === "vertical") {
+            let y = box.y;
+            for (let i = 0; i < list.length; ++i) { list[i].x = box.x; list[i].y = y; y += list[i].height + gap; }
+        } else if (mode === "cascade") {
+            const step = 40;
+            for (let i = 0; i < list.length; ++i) { list[i].x = box.x + i * step; list[i].y = box.y + i * step; }
+        } else {
+            if (mode === "tile" || !(rows > 0 && cols > 0)) {
+                cols = Math.ceil(Math.sqrt(list.length));
+                rows = Math.ceil(list.length / cols);
+            }
+            const cw = Math.max(50, Math.floor((box.width - gap * (cols - 1)) / cols));
+            const ch = Math.max(50, Math.floor((box.height - gap * (rows - 1)) / rows));
+            for (let i = 0; i < list.length; ++i) {
+                const e = list[i];
+                const r = Math.floor(i / cols), c = i % cols;
+                e.x = box.x + c * (cw + gap);
+                e.y = box.y + r * (ch + gap);
+                const idx = entries.indexOf(e);
+                if (idx >= 0) requestSize(idx, cw, ch, false, false);
+            }
+        }
+        revision++;
+    }
+
     // Dispatch a gesture on a window against the mouse bindings.
-    function windowGesture(entry, count, modifiers) {
-        if (gestureMatches(configuration.MouseNewDesktopAt, count, modifiers) && !desktopAt(entry)) {
+    signal contextRequested(var entry)
+
+    function windowGesture(entry, count, modifiers, button) {
+        if (gestureMatches(configuration.MouseContextMenu, count, modifiers, button)) {
+            contextEntry = entry;
+            if (!isSelected(entry)) selectOnly(entry);
+            contextRequested(entry);
+        } else if (gestureMatches(configuration.MouseNewDesktopAt, count, modifiers) && !desktopAt(entry)) {
             newDesktopAt(entry);
         } else if (gestureMatches(configuration.MouseFocusWindow, count, modifiers)) {
             focusWindow(entry);
@@ -824,6 +889,7 @@ KWin.SceneEffect {
         case "selectadd": selectAdd(entries[Number(a[1])]); break;
         case "selecttoggle": selectToggle(entries[Number(a[1])]); break;
         case "clearsel": clearSelection(); break;
+        case "arrange": arrange(a[1], Number(a[2]), Number(a[3])); break;
         case "marquee": selectInRect(Number(a[1]), Number(a[2]), Number(a[3]), Number(a[4])); break;
         case "state": break;
         default: console.warn("kwin-canvas: unknown debug command", cmd);
@@ -883,7 +949,7 @@ KWin.SceneEffect {
         signal dragStarted()
         signal dragged(real dx, real dy)
         signal dragEnded()
-        signal tapped(int count, int modifiers)
+        signal tapped(int count, int modifiers, int button)
 
         HoverHandler {
             id: gripHover
@@ -911,8 +977,8 @@ KWin.SceneEffect {
         TapHandler {
             id: gripTap
             enabled: grip.tappable && !grip.viewItem.spaceHeld
-            acceptedButtons: Qt.LeftButton
-            onTapped: grip.tapped(tapCount, point.modifiers)
+            acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+            onTapped: (eventPoint, button) => grip.tapped(tapCount, point.modifiers, button)
         }
     }
 
@@ -996,6 +1062,7 @@ KWin.SceneEffect {
     // ---- per-screen view ---------------------------------------------------
     delegate: Item {
         id: view
+        readonly property var screen: KWin.SceneView.screen
         readonly property rect sg: KWin.SceneView.screen.geometry
         property bool spaceHeld: false
         // Modifiers, tracked from key events, for the ground handlers.
@@ -1231,7 +1298,7 @@ KWin.SceneEffect {
                     viewItem: view
                     tappable: true
                     onDragged: (dx, dy) => effect.dragEntry(thumb.index, dx, dy)
-                    onTapped: (count, modifiers) => effect.windowGesture(thumb.entry, count, modifiers)
+                    onTapped: (count, modifiers, button) => effect.windowGesture(thumb.entry, count, modifiers, button)
                 }
 
                 // Resize grips: four edges, four corners, above the body. Each
@@ -1343,12 +1410,48 @@ KWin.SceneEffect {
             }
         }
 
+        // Arrange menu for the selection, opened by the context gesture on a window.
+        Connections {
+            target: effect
+            function onContextRequested(entry) {
+                // Attached properties resolve against this Connections object, so go through the view.
+                if (view.screen !== KWin.Workspace.activeScreen) return;
+                const p = KWin.Workspace.cursorPos;
+                arrangeMenu.x = p.x - view.sg.x;
+                arrangeMenu.y = p.y - view.sg.y;
+                arrangeMenu.open();
+            }
+        }
+        PC3.Menu {
+            id: arrangeMenu
+            z: 100001
+            title: "Arrange"
+            PC3.MenuItem { text: "Arrange horizontally"; icon.name: "view-split-left-right"; onTriggered: effect.arrange("horizontal") }
+            PC3.MenuItem { text: "Arrange vertically";   icon.name: "view-split-top-bottom"; onTriggered: effect.arrange("vertical") }
+            PC3.MenuItem { text: "Tile";                 icon.name: "view-grid";             onTriggered: effect.arrange("tile") }
+            PC3.Menu {
+                title: "Grid"
+                icon.name: "view-grid"
+                Repeater {
+                    model: ["1x2", "2x1", "2x2", "3x1", "1x3", "3x2", "2x3", "3x3", "4x2", "2x4"]
+                    delegate: PC3.MenuItem {
+                        required property string modelData
+                        text: modelData.replace("x", " × ") + "  (rows × columns)"
+                        onTriggered: { const p = modelData.split("x"); effect.arrange("grid", Number(p[0]), Number(p[1])); }
+                    }
+                }
+            }
+            PC3.MenuItem { text: "Cascade";              icon.name: "window-duplicate";      onTriggered: effect.arrange("cascade") }
+            PC3.MenuSeparator {}
+            PC3.MenuItem { text: "Clear selection";      icon.name: "edit-select-none";      onTriggered: effect.clearSelection() }
+        }
+
         // HUD: a Plasma toolbar, top centre. Camera state, the actions, help
         // with the bindings, and the settings pages that own them.
         Rectangle {
             id: hud
             z: 100000
-            visible: KWin.SceneView.screen === effect.primaryScreen
+            visible: view.screen === effect.primaryScreen
             readonly property string pos: String(effect.configuration.HudPosition || "Top").toLowerCase()
             readonly property bool atTop: pos.indexOf("top") === 0 || pos === "left" || pos === "right" ? pos.indexOf("bottom") !== 0 : false
             readonly property bool atBottom: pos.indexOf("bottom") === 0
@@ -1504,6 +1607,7 @@ KWin.SceneEffect {
                 K { text: effect.gestureLabel(effect.configuration.MouseSelect) + " window" }        V { text: "select it" }
                 K { text: effect.gestureLabel(effect.configuration.MouseSelectAdd) + " window, or +drag ground" } V { text: "add to the selection, or select by rectangle" }
                 K { text: effect.gestureLabel(effect.configuration.MouseSelectToggle) + " window" }  V { text: "toggle its selection; a selected window drags the whole selection" }
+                K { text: effect.gestureLabel(effect.configuration.MouseContextMenu) + " window" }   V { text: "arrange the selection: horizontal, vertical, tile, grid, cascade" }
                 K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: "apply, focused on it" }
                 K { text: effect.gestureLabel(effect.configuration.MouseZoomToDesktop) + " frame" }  V { text: "zoom to that desktop" }
                 K { text: effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame" }    V { text: "apply with that desktop current" }
