@@ -47,10 +47,15 @@ kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.1.tar.gz
 then enable **Canvas** in System Settings → Desktop Effects. From a checkout:
 
 ```bash
-make install    # kpackagetool6 into ~/.local/share
-make enable     # turn the effect on in the running session
-make dist       # build the tarballs yourself
+./configure.sh install      # both packages into ~/.local/share, effect turned on
+./configure.sh status       # installed, enabled, loaded
+./configure.sh uninstall    # off and removed
 ```
+
+Every `configure.sh` command is one Makefile target (`make install enable`,
+`make status`, `make uninstall`); `make` alone lists the rest, including
+`install-system` with `DESTDIR` for distro packaging and `pkgbuild` for the
+AUR skeleton.
 
 Then pick **Canvas Ground** as the desktop wallpaper in Desktop Settings, and
 disable the stock **Zoom** effect if it owns Meta+wheel.

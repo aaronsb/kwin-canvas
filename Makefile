@@ -21,7 +21,7 @@ PYTHON      := python3
 help: ## Show this help
 	@echo "kwin-canvas"
 	@echo
-	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z_-]+:.*## /{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z_-]+:.*## /{printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo
 	@echo "Short form: ./configure.sh install | uninstall | enable | disable | status | try"
 	@echo "Nest commands take NEST_NAME=<name> to run a second nest; tests use NEST_NAME=test."

@@ -54,9 +54,22 @@ to focus it. `make nest-down` closes it.
 ### From a checkout
 
 ```bash
-make install   # both packages into ~/.local/share
-make enable    # step 3 above
+./configure.sh install    # both packages into ~/.local/share, then step 3
+./configure.sh status     # what is installed, enabled and loaded
 ```
+
+`configure.sh` is a short front for the Makefile: `make install enable` is
+the same thing, and `make` alone lists every target.
+
+### As a distro package
+
+`make install-system DESTDIR=...` copies both packages into
+`/usr/share/kwin/effects` and `/usr/share/plasma/wallpapers` under that
+root, the same places `kpackagetool6 --global` uses, with no session calls.
+`make pkgbuild` writes `dist/PKGBUILD` for the AUR from
+`packaging/PKGBUILD.in`; once the release tag is on GitHub, `updpkgsums` and
+`makepkg -si` in `dist/` build and install it. Users then enable the effect
+in Desktop Effects or with step 3's D-Bus call.
 
 ## First use
 
@@ -112,7 +125,8 @@ it.
 
 ## Turn it off or remove it
 
-Untick **Canvas** in Desktop Effects, or:
+Untick **Canvas** in Desktop Effects, `./configure.sh uninstall` from a
+checkout, or:
 
 ```bash
 kwriteconfig6 --file kwinrc --group Plugins --key kwin-canvasEnabled false
