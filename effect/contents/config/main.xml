@@ -95,6 +95,18 @@
             <label>Gesture on a desktop frame that applies with that desktop current.</label>
             <default>Ctrl+DoubleClick</default>
         </entry>
+        <entry name="MouseSelect" type="String">
+            <label>Gesture on a window that selects it alone.</label>
+            <default>Click</default>
+        </entry>
+        <entry name="MouseSelectAdd" type="String">
+            <label>Gesture on a window that adds it to the selection; its modifier plus a drag on the ground selects by rectangle.</label>
+            <default>Shift+Click</default>
+        </entry>
+        <entry name="MouseSelectToggle" type="String">
+            <label>Gesture on a window that toggles its selection.</label>
+            <default>Ctrl+Click</default>
+        </entry>
         <entry name="MouseNewDesktopAt" type="String">
             <label>Gesture on a window outside every frame that creates a desktop centred on it.</label>
             <default>Shift+DoubleClick</default>

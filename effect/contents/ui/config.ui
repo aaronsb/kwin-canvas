@@ -41,6 +41,12 @@
      <item row="1" column="1"><widget class="QLineEdit" name="kcfg_MouseZoomToDesktop"/></item>
      <item row="2" column="0"><widget class="QLabel" name="label_MouseGotoDesktop"><property name="text"><string>On a frame: apply with that desktop current</string></property><property name="buddy"><cstring>kcfg_MouseGotoDesktop</cstring></property></widget></item>
      <item row="2" column="1"><widget class="QLineEdit" name="kcfg_MouseGotoDesktop"/></item>
+     <item row="4" column="0"><widget class="QLabel" name="label_MouseSelect"><property name="text"><string>On a window: select it alone</string></property><property name="buddy"><cstring>kcfg_MouseSelect</cstring></property></widget></item>
+     <item row="4" column="1"><widget class="QLineEdit" name="kcfg_MouseSelect"/></item>
+     <item row="5" column="0"><widget class="QLabel" name="label_MouseSelectAdd"><property name="text"><string>On a window: add to selection (its modifier + drag on ground: rectangle select)</string></property><property name="buddy"><cstring>kcfg_MouseSelectAdd</cstring></property></widget></item>
+     <item row="5" column="1"><widget class="QLineEdit" name="kcfg_MouseSelectAdd"/></item>
+     <item row="6" column="0"><widget class="QLabel" name="label_MouseSelectToggle"><property name="text"><string>On a window: toggle selection</string></property><property name="buddy"><cstring>kcfg_MouseSelectToggle</cstring></property></widget></item>
+     <item row="6" column="1"><widget class="QLineEdit" name="kcfg_MouseSelectToggle"/></item>
      <item row="3" column="0"><widget class="QLabel" name="label_MouseNewDesktopAt"><property name="text"><string>On a window outside every frame: new desktop there</string></property><property name="buddy"><cstring>kcfg_MouseNewDesktopAt</cstring></property></widget></item>
      <item row="3" column="1"><widget class="QLineEdit" name="kcfg_MouseNewDesktopAt"/></item>
     </layout></widget></item>

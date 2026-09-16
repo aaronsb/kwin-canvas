@@ -67,6 +67,8 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | drag a window's edge or corner | | resize it, live |
 | + on a frame tag | | add a desktop after that one |
 | trash on a frame tag | | remove that desktop (never the first) |
+| click a window | | select it; Shift+click adds, Ctrl+click toggles, Shift+drag on the ground selects by rectangle |
+| drag a selected window | | move the whole selection, geometry kept; drop it in a frame and apply to move them all to that desktop |
 | double-click a window | | apply with it on screen, focus it |
 | double-click a frame | | zoom to that desktop |
 | Ctrl+double-click a frame | | apply with that desktop current |

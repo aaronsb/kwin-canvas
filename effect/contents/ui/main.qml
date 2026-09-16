@@ -58,6 +58,29 @@ KWin.SceneEffect {
     property var entries: []
     property int revision: 0
     property bool helpOpen: false
+    // Selection: window internalId -> true. selectionRev bumps on every change.
+    property var selected: ({})
+    property int selectionRev: 0
+
+    function isSelected(e) { return e && selected[e.window.internalId] === true; }
+    function selectOnly(e) { selected = {}; if (e) selected[e.window.internalId] = true; selectionRev++; }
+    function selectAdd(e) { if (e) selected[e.window.internalId] = true; selectionRev++; }
+    function selectToggle(e) {
+        if (!e) return;
+        if (selected[e.window.internalId]) delete selected[e.window.internalId]; else selected[e.window.internalId] = true;
+        selectionRev++;
+    }
+    function clearSelection() { selected = {}; selectionRev++; }
+    function selectedCount() { let n = 0; for (const k in selected) n++; return n; }
+    // Add every window whose canvas rect meets the rectangle.
+    function selectInRect(x, y, w, h) {
+        for (let i = 0; i < entries.length; ++i) {
+            const e = entries[i];
+            if (e.x < x + w && e.x + e.width > x && e.y < y + h && e.y + e.height > y) selected[e.window.internalId] = true;
+        }
+        selectionRev++;
+    }
+    function desktopColor(d) { return palette[desktopIndex(d) % palette.length]; }
     property int lastDebugSeq: 0
 
     // ---- key bindings, from config ------------------------------------------
@@ -382,6 +405,7 @@ KWin.SceneEffect {
         entryViewX = viewX;
         entryViewY = viewY;
         zoom = 1.0;
+        clearSelection();
         targets[KWin.Workspace.currentDesktop.id] = { x: viewX, y: viewY };
         ensureTargets();
         entryTargets = copyTargets(targets);
@@ -518,8 +542,17 @@ KWin.SceneEffect {
             newDesktopAt(entry);
         } else if (gestureMatches(configuration.MouseFocusWindow, count, modifiers)) {
             focusWindow(entry);
+        } else if (gestureMatches(configuration.MouseSelectToggle, count, modifiers)) {
+            selectToggle(entry);
+        } else if (gestureMatches(configuration.MouseSelectAdd, count, modifiers)) {
+            selectAdd(entry);
+        } else if (gestureMatches(configuration.MouseSelect, count, modifiers)) {
+            selectOnly(entry);
         }
     }
+
+    // The modifier of the add gesture is also the marquee modifier on the ground.
+    function marqueeModifiers() { return gestureFor(configuration.MouseSelectAdd).mods; }
 
     function frameGesture(d, count, modifiers) {
         if (gestureMatches(configuration.MouseGotoDesktop, count, modifiers)) gotoDesktop(d);
@@ -531,11 +564,20 @@ KWin.SceneEffect {
     // Move a window on the canvas by a screen-space delta while the canvas is open.
     // Entries are addressed by index: the Repeater hands delegates a copy of the
     // element, so mutating modelData would never reach the committed table.
+    // A selected window drags the whole selection; relative geometry is kept.
     function dragEntry(index, dx, dy) {
         const e = entries[index];
         if (!e) return;
-        e.x += dx / zoom;
-        e.y += dy / zoom;
+        if (isSelected(e)) {
+            for (let i = 0; i < entries.length; ++i) {
+                if (!isSelected(entries[i])) continue;
+                entries[i].x += dx / zoom;
+                entries[i].y += dy / zoom;
+            }
+        } else {
+            e.x += dx / zoom;
+            e.y += dy / zoom;
+        }
         revision++;
     }
 
@@ -778,6 +820,11 @@ KWin.SceneEffect {
             break;
         }
         case "help": helpOpen = !helpOpen; break;
+        case "select": selectOnly(entries[Number(a[1])]); break;
+        case "selectadd": selectAdd(entries[Number(a[1])]); break;
+        case "selecttoggle": selectToggle(entries[Number(a[1])]); break;
+        case "clearsel": clearSelection(); break;
+        case "marquee": selectInRect(Number(a[1]), Number(a[2]), Number(a[3]), Number(a[4])); break;
         case "state": break;
         default: console.warn("kwin-canvas: unknown debug command", cmd);
         }
@@ -795,7 +842,7 @@ KWin.SceneEffect {
         for (let i = 0; i < entries.length; ++i) {
             const e = entries[i];
             const g = e.window.frameGeometry;
-            s += "\n  [" + i + "] " + e.window.caption + " canvas=(" + e.x.toFixed(0) + "," + e.y.toFixed(0) + " " + e.width + "x" + e.height + ") frame=(" + g.x + "," + g.y + ") desktop=" + e.desktop.name;
+            s += "\n  [" + i + "] " + (isSelected(e) ? "*" : " ") + e.window.caption + " canvas=(" + e.x.toFixed(0) + "," + e.y.toFixed(0) + " " + e.width + "x" + e.height + ") frame=(" + g.x + "," + g.y + ") desktop=" + e.desktop.name;
         }
         console.log(s);
     }
@@ -951,6 +998,8 @@ KWin.SceneEffect {
         id: view
         readonly property rect sg: KWin.SceneView.screen.geometry
         property bool spaceHeld: false
+        // Modifiers, tracked from key events, for the ground handlers.
+        property int heldModifiers: 0
         // Number of grips and buttons under the pointer. The pan handler
         // refuses a left press while this is non-zero, so a drag that starts
         // on one of them acts on it instead of racing the pan.
@@ -977,10 +1026,56 @@ KWin.SceneEffect {
 
         // Pan: left-drag on the ground, middle-drag anywhere, or hold Space and
         // left-drag anywhere (Space disables every Grip and IconButton).
+        // Ground click: drop the selection.
+        TapHandler {
+            enabled: !view.spaceHeld && !view.overControl
+            acceptedButtons: Qt.LeftButton
+            onTapped: (eventPoint, button) => { if ((point.modifiers & effect.marqueeModifiers()) === 0) effect.clearSelection(); }
+        }
+
+        // Marquee: the add gesture's modifier plus a drag on the ground selects by rectangle.
+        DragHandler {
+            id: marquee
+            target: null
+            // Latched while active: crossing a window mid-drag must not end the gesture.
+            enabled: active || (!view.spaceHeld && !view.overControl && effect.marqueeModifiers() !== 0 && (view.heldModifiers & effect.marqueeModifiers()) !== 0)
+            acceptedButtons: Qt.LeftButton
+            onActiveChanged: {
+                if (active) {
+                    marqueeBox.x0 = centroid.pressPosition.x; marqueeBox.y0 = centroid.pressPosition.y;
+                    marqueeBox.x1 = marqueeBox.x0; marqueeBox.y1 = marqueeBox.y0;
+                } else {
+                    // The centroid resets on release; the box kept the last corner.
+                    const r = marqueeBox.rect;
+                    const c0 = effect.globalToCanvas(r.x + view.sg.x, r.y + view.sg.y);
+                    effect.selectInRect(c0.x, c0.y, r.width / effect.zoom, r.height / effect.zoom);
+                }
+            }
+            onActiveTranslationChanged: {
+                marqueeBox.x1 = marqueeBox.x0 + activeTranslation.x;
+                marqueeBox.y1 = marqueeBox.y0 + activeTranslation.y;
+            }
+        }
+        Rectangle {
+            id: marqueeBox
+            property real x0: 0
+            property real y0: 0
+            property real x1: 0
+            property real y1: 0
+            readonly property rect rect: Qt.rect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0))
+            visible: marquee.active
+            z: 90000
+            x: rect.x; y: rect.y; width: rect.width; height: rect.height
+            color: Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.15)
+            border.width: 1
+            border.color: Kirigami.Theme.highlightColor
+        }
+
         DragHandler {
             id: panDrag
             target: null
-            acceptedButtons: (view.spaceHeld || !view.overControl) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
+            enabled: active || !marquee.enabled
+            acceptedButtons: (active || view.spaceHeld || !view.overControl) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
             cursorShape: active ? Qt.ClosedHandCursor : (view.spaceHeld ? Qt.OpenHandCursor : Qt.ArrowCursor)
             property point last: Qt.point(0, 0)
             onActiveChanged: last = Qt.point(0, 0)
@@ -1105,8 +1200,10 @@ KWin.SceneEffect {
                 Rectangle {
                     anchors.fill: parent
                     color: "transparent"
-                    border.width: body.hovered || body.active ? 2 : 1
-                    border.color: body.hovered || body.active ? "#ffffff" : "#40ffffff"
+                    readonly property bool sel: { effect.selectionRev; return effect.isSelected(thumb.entry); }
+                    border.width: sel ? 3 : (body.hovered || body.active ? 2 : 1)
+                    border.color: sel ? Kirigami.Theme.highlightColor
+                                : (body.hovered || body.active ? effect.desktopColor(thumb.entry.desktop) : "#40ffffff")
                 }
 
                 Text {
@@ -1201,8 +1298,20 @@ KWin.SceneEffect {
             }
         }
 
+        function modifierOf(key) {
+            switch (key) {
+            case Qt.Key_Shift: return Qt.ShiftModifier;
+            case Qt.Key_Control: return Qt.ControlModifier;
+            case Qt.Key_Alt: return Qt.AltModifier;
+            case Qt.Key_Meta: return Qt.MetaModifier;
+            }
+            return 0;
+        }
+
         Keys.onPressed: (event) => {
             const k = event.key;
+            const m = view.modifierOf(k);
+            if (m) { view.heldModifiers |= m; return; }
             if (effect.bound("pan", k)) {
                 if (!event.isAutoRepeat) view.spaceHeld = true;
             } else if (effect.bound("cancel", k)) {
@@ -1226,6 +1335,8 @@ KWin.SceneEffect {
         }
 
         Keys.onReleased: (event) => {
+            const m = view.modifierOf(event.key);
+            if (m) { view.heldModifiers &= ~m; return; }
             if (effect.bound("pan", event.key) && !event.isAutoRepeat) {
                 view.spaceHeld = false;
                 event.accepted = true;
@@ -1308,6 +1419,27 @@ KWin.SceneEffect {
                     Layout.columnSpan: hud.square ? hud.squareColumns : 1
                     Layout.rightMargin: hud.vertical || hud.square ? 0 : Kirigami.Units.smallSpacing
                 }
+                // One swatch per desktop in its frame colour; click to zoom to it.
+                Repeater {
+                    model: KWin.Workspace.desktops
+                    delegate: Rectangle {
+                        required property var modelData
+                        required property int index
+                        readonly property bool current: modelData === KWin.Workspace.currentDesktop
+                        width: Kirigami.Units.iconSizes.small
+                        height: Kirigami.Units.iconSizes.small
+                        radius: 3
+                        color: effect.palette[index % effect.palette.length]
+                        border.width: current ? 2 : 0
+                        border.color: Kirigami.Theme.textColor
+                        Layout.alignment: Qt.AlignCenter
+                        PC3.ToolTip.text: modelData.name
+                        PC3.ToolTip.visible: swatchHover.hovered
+                        HoverHandler { id: swatchHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { acceptedButtons: Qt.LeftButton; onTapped: effect.zoomToDesktop(modelData) }
+                    }
+                }
+                Sep {}
                 PC3.ToolButton { icon.name: "zoom-fit-best";   text: "Fit";    display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom to fit (" + effect.keyLabel(effect.configuration.KeyFit) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.zoomExtents() }
                 PC3.ToolButton { icon.name: "go-home";         text: "Home";   display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Look through this desktop's frames (" + effect.keyLabel(effect.configuration.KeyHome) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.home() }
                 PC3.ToolButton { icon.name: "zoom-in";         text: "In";     display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom in (" + effect.keyLabel(effect.configuration.KeyZoomIn) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom * effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
@@ -1369,6 +1501,9 @@ KWin.SceneEffect {
                 K { text: "drag window" }                                       V { text: "move it on the plane" }
                 K { text: "drag window edge or corner" }                        V { text: "resize it" }
                 K { text: "drag frame tag or edge" }                            V { text: "move that desktop's screens" }
+                K { text: effect.gestureLabel(effect.configuration.MouseSelect) + " window" }        V { text: "select it" }
+                K { text: effect.gestureLabel(effect.configuration.MouseSelectAdd) + " window, or +drag ground" } V { text: "add to the selection, or select by rectangle" }
+                K { text: effect.gestureLabel(effect.configuration.MouseSelectToggle) + " window" }  V { text: "toggle its selection; a selected window drags the whole selection" }
                 K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: "apply, focused on it" }
                 K { text: effect.gestureLabel(effect.configuration.MouseZoomToDesktop) + " frame" }  V { text: "zoom to that desktop" }
                 K { text: effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame" }    V { text: "apply with that desktop current" }
