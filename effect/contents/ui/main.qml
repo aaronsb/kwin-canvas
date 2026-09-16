@@ -3,25 +3,30 @@
 
     At 1:1 there is no effect running. Windows are ordinary KWin windows at
     ordinary positions, some of them off-screen. The screen is a 1:1 viewport
-    onto that plane.
+    onto one shared plane.
 
-    Opening the canvas (Meta+Space) snapshots every window's position into
-    canvas coordinates and shows them as live thumbnails on a ground grid.
-    Pan, zoom, drag windows around, pick one. Closing the canvas writes the
-    new positions back as plain window geometry and hands input back to KWin.
+    Every virtual desktop is a viewport onto that same plane: a rigid group of
+    monitor frames, one per output in the layout KDE knows, placed somewhere on
+    the canvas. Switching desktops is switching viewport. Dragging a window
+    into another desktop's frame moves it to that desktop.
+
+    Opening the canvas snapshots every window into canvas coordinates and shows
+    them as live thumbnails on a ground grid, with the frames drawn over them.
+    Pan, zoom, drag windows, drag frames. Apply writes positions back as plain
+    window geometry relative to the frame they sit in.
 
     Coordinate spaces:
       canvas   the plane windows live on; unbounded
       global   KWin's coordinate space across all outputs
       view     (viewX, viewY) is the canvas point the camera puts at global (0,0)
-      target   (targetX, targetY) is the canvas point that will be at global
-               (0,0) after apply. The monitor frames are drawn there.
+      target   per desktop: the canvas point at global (0,0) when that desktop
+               is shown. Its frames are drawn at target + output.geometry.
 
       global = (canvas - view) * zoom
       canvas = view + global / zoom
-      frame after apply = canvas - target
+      frame geometry = canvas - target(desktop of the window)
 
-    While the canvas is closed, view == target.
+    While the canvas is closed, view == target(current desktop).
 */
 import QtQuick
 import org.kde.kwin as KWin
@@ -35,18 +40,20 @@ KWin.SceneEffect {
     property real zoom: 1.0
     property real entryViewX: 0
     property real entryViewY: 0
-    // Where the real screens will land on apply. Drawn as monitor frames.
-    property real targetX: 0
-    property real targetY: 0
+
+    // ---- targets: desktop id -> {x, y} -------------------------------------
+    property var targets: ({})
+    property var entryTargets: ({})
 
     // ---- model -------------------------------------------------------------
-    // Each entry: { window, x, y, width, height } in canvas units, bottom to top.
+    // Each entry: { window, desktop, x, y, width, height } in canvas units, bottom to top.
     property var entries: []
     property int revision: 0
     property int lastDebugSeq: 0
 
     readonly property real zoomMin: configuration.ZoomMin
     readonly property real zoomStep: configuration.ZoomStep
+    readonly property var palette: ["#4fa3ff", "#ff9f43", "#2ecc71", "#e056fd", "#f9ca24", "#ff6b6b", "#48dbfb", "#c8d6e5"]
 
     // ---- window filter -----------------------------------------------------
     function isCanvasWindow(w, anyDesktop) {
@@ -63,14 +70,80 @@ KWin.SceneEffect {
         return true;
     }
 
+    // ---- desktops and targets ----------------------------------------------
+    function desktopOf(w) {
+        if (w.onAllDesktops || w.desktops.length === 0) return KWin.Workspace.currentDesktop;
+        return w.desktops[0];
+    }
+
+    function targetOf(d) {
+        let t = targets[d.id];
+        if (!t) {
+            t = { x: viewX, y: viewY };
+            targets[d.id] = t;
+        }
+        return t;
+    }
+
+    function desktopIndex(d) {
+        const ds = KWin.Workspace.desktops;
+        for (let i = 0; i < ds.length; ++i) if (ds[i] === d) return i;
+        return 0;
+    }
+
+    // The current desktop's target is the camera. Desktops never placed get laid
+    // out in a row beside it, which moves nothing: their windows' canvas
+    // positions are derived from the target.
+    function ensureTargets() {
+        const ds = KWin.Workspace.desktops;
+        const cur = KWin.Workspace.currentDesktop;
+        const ci = desktopIndex(cur);
+        targets[cur.id] = { x: viewX, y: viewY };
+        const vs = KWin.Workspace.virtualScreenGeometry;
+        const step = vs.width + configuration.DesktopGap;
+        for (let i = 0; i < ds.length; ++i) {
+            if (!targets[ds[i].id]) targets[ds[i].id] = { x: viewX + (i - ci) * step, y: viewY };
+        }
+    }
+
+    function copyTargets(src) {
+        const out = {};
+        for (const k in src) out[k] = { x: src[k].x, y: src[k].y };
+        return out;
+    }
+
+    // The desktop whose frames contain the centre of a canvas rect, or null.
+    function desktopAt(rect) {
+        const cx = rect.x + rect.width / 2, cy = rect.y + rect.height / 2;
+        const ds = KWin.Workspace.desktops;
+        const screens = KWin.Workspace.screens;
+        for (let i = 0; i < ds.length; ++i) {
+            const t = targetOf(ds[i]);
+            for (let j = 0; j < screens.length; ++j) {
+                const g = screens[j].geometry;
+                if (cx >= t.x + g.x && cx < t.x + g.x + g.width && cy >= t.y + g.y && cy < t.y + g.y + g.height) return ds[i];
+            }
+        }
+        return null;
+    }
+
+    function dragTarget(d, dx, dy) {
+        const t = targetOf(d);
+        t.x += dx / zoom;
+        t.y += dy / zoom;
+        revision++;
+    }
+
     function snapshot() {
         const list = [];
         const stack = KWin.Workspace.stackingOrder;
         for (let i = 0; i < stack.length; ++i) {
             const w = stack[i];
-            if (!isCanvasWindow(w, false)) continue;
+            if (!isCanvasWindow(w, true)) continue;
+            const d = desktopOf(w);
+            const t = targetOf(d);
             const g = w.frameGeometry;
-            list.push({ window: w, x: g.x + viewX, y: g.y + viewY, width: g.width, height: g.height });
+            list.push({ window: w, desktop: d, x: g.x + t.x, y: g.y + t.y, width: g.width, height: g.height });
         }
         entries = list;
         revision++;
@@ -78,7 +151,6 @@ KWin.SceneEffect {
 
     // ---- camera ops --------------------------------------------------------
     function globalToCanvas(gx, gy) { return Qt.point(viewX + gx / zoom, viewY + gy / zoom); }
-    function canvasToGlobal(cx, cy) { return Qt.point((cx - viewX) * zoom, (cy - viewY) * zoom); }
 
     // Zoom while holding the canvas point under `anchor` (global px) fixed on screen.
     function setZoom(z, anchor) {
@@ -89,16 +161,16 @@ KWin.SceneEffect {
         viewY = c.y - anchor.y / zoom;
     }
 
-    // Pan by a screen-space delta.
     function panBy(dx, dy) {
         viewX -= dx / zoom;
         viewY -= dy / zoom;
     }
 
-    // Look through the frames: the camera goes where apply would put it.
+    // Look through the current desktop's frames.
     function home() {
-        viewX = targetX;
-        viewY = targetY;
+        const t = targetOf(KWin.Workspace.currentDesktop);
+        viewX = t.x;
+        viewY = t.y;
         zoom = 1.0;
     }
 
@@ -108,24 +180,7 @@ KWin.SceneEffect {
         zoom = 1.0;
     }
 
-    // Move the frames by a screen-space delta.
-    function dragTarget(dx, dy) {
-        targetX += dx / zoom;
-        targetY += dy / zoom;
-    }
-
-    function frameContains(rect) {
-        const screens = KWin.Workspace.screens;
-        for (let i = 0; i < screens.length; ++i) {
-            const g = screens[i].geometry;
-            if (rect.x >= targetX + g.x && rect.y >= targetY + g.y
-                && rect.x + rect.width <= targetX + g.x + g.width
-                && rect.y + rect.height <= targetY + g.y + g.height) return true;
-        }
-        return false;
-    }
-
-    // Fit every window into the active screen.
+    // Fit every window and every frame into the active screen.
     function zoomExtents() {
         let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
         for (let i = 0; i < entries.length; ++i) {
@@ -134,8 +189,12 @@ KWin.SceneEffect {
             r = Math.max(r, e.x + e.width); b = Math.max(b, e.y + e.height);
         }
         const vs = KWin.Workspace.virtualScreenGeometry;
-        l = Math.min(l, targetX + vs.x); t = Math.min(t, targetY + vs.y);
-        r = Math.max(r, targetX + vs.x + vs.width); b = Math.max(b, targetY + vs.y + vs.height);
+        const ds = KWin.Workspace.desktops;
+        for (let i = 0; i < ds.length; ++i) {
+            const tg = targetOf(ds[i]);
+            l = Math.min(l, tg.x + vs.x); t = Math.min(t, tg.y + vs.y);
+            r = Math.max(r, tg.x + vs.x + vs.width); b = Math.max(b, tg.y + vs.y + vs.height);
+        }
         const sg = KWin.Workspace.activeScreen.geometry;
         const pad = 80;
         const z = Math.max(zoomMin, Math.min(1.0, Math.min((sg.width - 2 * pad) / (r - l), (sg.height - 2 * pad) / (b - t))));
@@ -149,38 +208,50 @@ KWin.SceneEffect {
         if (visible) return;
         entryViewX = viewX;
         entryViewY = viewY;
-        targetX = viewX;
-        targetY = viewY;
         zoom = 1.0;
+        ensureTargets();
+        entryTargets = copyTargets(targets);
         snapshot();
         visible = true;
     }
 
-    // Put the frames' contents on the real screens: write canvas positions back
-    // as geometry relative to target, move the camera there, hand input back.
+    // Write every window's geometry relative to the frame it sits in, move it to
+    // that frame's desktop, put the camera on the current desktop's target, and
+    // hand input back.
     function commit(activate) {
-        targetX = Math.round(targetX);
-        targetY = Math.round(targetY);
+        for (const k in targets) {
+            targets[k].x = Math.round(targets[k].x);
+            targets[k].y = Math.round(targets[k].y);
+        }
         const seen = {};
         for (let i = 0; i < entries.length; ++i) {
             const e = entries[i];
             if (e.window.deleted) continue;
             seen[e.window.internalId] = true;
-            e.window.frameGeometry = Qt.rect(e.x - targetX, e.y - targetY, e.width, e.height);
+            let d = desktopAt(e);
+            if (!d) d = e.desktop;
+            if (d !== e.desktop && !e.window.onAllDesktops) e.window.desktops = [d];
+            const t = targetOf(d);
+            e.window.frameGeometry = Qt.rect(Math.round(e.x - t.x), Math.round(e.y - t.y), e.width, e.height);
         }
-        // Windows not shown (other desktops) still share the plane: shift them by the pan.
-        const dx = entryViewX - targetX, dy = entryViewY - targetY;
-        if (dx !== 0 || dy !== 0) {
-            const all = KWin.Workspace.stackingOrder;
-            for (let i = 0; i < all.length; ++i) {
-                const w = all[i];
-                if (seen[w.internalId] || !isCanvasWindow(w, true)) continue;
-                const g = w.frameGeometry;
-                w.frameGeometry = Qt.rect(g.x + dx, g.y + dy, g.width, g.height);
-            }
+        // Windows not shown (minimized, hidden) share the plane: keep them where
+        // they were relative to their desktop's frames.
+        const all = KWin.Workspace.stackingOrder;
+        for (let i = 0; i < all.length; ++i) {
+            const w = all[i];
+            if (seen[w.internalId] || w.deleted || !w.managed) continue;
+            if (w.desktopWindow || w.dock || w.popupWindow || w.specialWindow) continue;
+            const d = desktopOf(w);
+            const was = entryTargets[d.id], now = targetOf(d);
+            if (!was) continue;
+            const dx = was.x - now.x, dy = was.y - now.y;
+            if (dx === 0 && dy === 0) continue;
+            const g = w.frameGeometry;
+            w.frameGeometry = Qt.rect(g.x + dx, g.y + dy, g.width, g.height);
         }
-        viewX = targetX;
-        viewY = targetY;
+        const cur = targetOf(KWin.Workspace.currentDesktop);
+        viewX = cur.x;
+        viewY = cur.y;
         zoom = 1.0;
         publishGround();
         visible = false;
@@ -190,6 +261,7 @@ KWin.SceneEffect {
     }
 
     function cancel() {
+        targets = copyTargets(entryTargets);
         viewX = entryViewX;
         viewY = entryViewY;
         zoom = 1.0;
@@ -200,13 +272,14 @@ KWin.SceneEffect {
         if (visible) commit(null); else open();
     }
 
-    // Apply with this window on screen: if it lies inside no frame, centre the
-    // active screen's frame on it first.
+    // Apply with this window on screen. If it sits in no frame, centre the
+    // current desktop's active-screen frame on it first.
     function pick(entry) {
-        if (!frameContains(entry)) {
+        if (!desktopAt(entry)) {
             const g = KWin.Workspace.activeScreen.geometry;
-            targetX = entry.x + entry.width / 2 - (g.x + g.width / 2);
-            targetY = entry.y + entry.height / 2 - (g.y + g.height / 2);
+            const t = targetOf(KWin.Workspace.currentDesktop);
+            t.x = entry.x + entry.width / 2 - (g.x + g.width / 2);
+            t.y = entry.y + entry.height / 2 - (g.y + g.height / 2);
         }
         commit(entry.window);
     }
@@ -245,17 +318,20 @@ KWin.SceneEffect {
     }
 
     // ---- 1:1 behaviours (effect closed) ------------------------------------
-    // Shift the whole plane so the screen shows a different region, at 1:1.
+    // Shift the current desktop's viewport: move its windows and its target.
     function shiftAll(dx, dy) {
         const all = KWin.Workspace.stackingOrder;
         for (let i = 0; i < all.length; ++i) {
             const w = all[i];
-            if (!isCanvasWindow(w, true)) continue;
+            if (!isCanvasWindow(w, false)) continue;
             const g = w.frameGeometry;
             w.frameGeometry = Qt.rect(g.x + dx, g.y + dy, g.width, g.height);
         }
-        viewX -= dx;
-        viewY -= dy;
+        const t = targetOf(KWin.Workspace.currentDesktop);
+        t.x -= dx;
+        t.y -= dy;
+        viewX = t.x;
+        viewY = t.y;
         publishGround();
     }
 
@@ -275,6 +351,14 @@ KWin.SceneEffect {
             const dy = Math.round(area.y + (area.height - g.height) / 2 - g.y);
             effect.shiftAll(dx, dy);
         }
+        // Switching desktops at 1:1 switches viewport: the ground follows.
+        function onCurrentDesktopChanged() {
+            if (effect.visible) return;
+            const t = effect.targetOf(KWin.Workspace.currentDesktop);
+            effect.viewX = t.x;
+            effect.viewY = t.y;
+            effect.publishGround();
+        }
     }
 
     // ---- shortcuts ---------------------------------------------------------
@@ -286,13 +370,14 @@ KWin.SceneEffect {
     }
     KWin.ShortcutHandler {
         name: "Canvas Home"
-        text: "Canvas: return to the origin"
+        text: "Canvas: return this desktop to the origin"
         sequence: effect.configuration.HomeShortcut
         onActivated: {
             if (effect.visible) { effect.home(); return; }
             effect.open();
-            effect.targetX = 0;
-            effect.targetY = 0;
+            const t = effect.targetOf(KWin.Workspace.currentDesktop);
+            t.x = 0;
+            t.y = 0;
             effect.commit(null);
         }
     }
@@ -307,6 +392,7 @@ KWin.SceneEffect {
         case "cancel": cancel(); break;
         case "toggle": toggle(); break;
         case "home": home(); break;
+        case "origin": origin(); break;
         case "extents": zoomExtents(); break;
         case "pan": panBy(Number(a[1]), Number(a[2])); break;
         case "zoom": {
@@ -316,8 +402,19 @@ KWin.SceneEffect {
         }
         case "shift": shiftAll(Number(a[1]), Number(a[2])); break;
         case "drag": dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
-        case "frames": dragTarget(Number(a[1]), Number(a[2])); break;
-        case "origin": origin(); break;
+        case "place": {
+            const e = entries[Number(a[1])];
+            if (e) { e.x = Number(a[2]); e.y = Number(a[3]); revision++; }
+            break;
+        }
+        case "frames": {
+            // frames DX DY [desktopIndex]
+            const ds = KWin.Workspace.desktops;
+            const d = a.length >= 4 ? ds[Number(a[3])] : KWin.Workspace.currentDesktop;
+            dragTarget(d, Number(a[1]), Number(a[2]));
+            break;
+        }
+        case "pick": pick(entries[Number(a[1])]); break;
         case "activate": {
             const all = KWin.Workspace.stackingOrder;
             for (let i = 0; i < all.length; ++i) {
@@ -325,12 +422,13 @@ KWin.SceneEffect {
             }
             break;
         }
+        case "desktop": KWin.Workspace.currentDesktop = KWin.Workspace.desktops[Number(a[1])]; break;
         case "list": {
             const all = KWin.Workspace.stackingOrder;
             let s = "kwin-canvas windows:";
             for (let i = 0; i < all.length; ++i) {
                 const w = all[i]; const g = w.frameGeometry;
-                s += "\n  " + (isCanvasWindow(w, true) ? "*" : " ") + " " + w.caption + " frame=(" + g.x + "," + g.y + " " + g.width + "x" + g.height + ")";
+                s += "\n  " + (isCanvasWindow(w, true) ? "*" : " ") + " " + w.caption + " frame=(" + g.x + "," + g.y + " " + g.width + "x" + g.height + ") desktop=" + (w.onAllDesktops ? "all" : desktopOf(w).name);
             }
             console.log(s);
             break;
@@ -342,11 +440,17 @@ KWin.SceneEffect {
     }
 
     function logState() {
-        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") target=(" + targetX.toFixed(1) + "," + targetY.toFixed(1) + ") entries=" + entries.length;
+        const cur = KWin.Workspace.currentDesktop;
+        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") desktop=" + cur.name + " entries=" + entries.length;
+        const ds = KWin.Workspace.desktops;
+        for (let i = 0; i < ds.length; ++i) {
+            const t = targetOf(ds[i]);
+            s += "\n  {" + i + "} " + ds[i].name + " target=(" + t.x.toFixed(0) + "," + t.y.toFixed(0) + ")";
+        }
         for (let i = 0; i < entries.length; ++i) {
             const e = entries[i];
             const g = e.window.frameGeometry;
-            s += "\n  [" + i + "] " + e.window.caption + " canvas=(" + e.x.toFixed(0) + "," + e.y.toFixed(0) + " " + e.width + "x" + e.height + ") frame=(" + g.x + "," + g.y + ")";
+            s += "\n  [" + i + "] " + e.window.caption + " canvas=(" + e.x.toFixed(0) + "," + e.y.toFixed(0) + " " + e.width + "x" + e.height + ") frame=(" + g.x + "," + g.y + ") desktop=" + e.desktop.name;
         }
         console.log(s);
     }
@@ -372,9 +476,9 @@ KWin.SceneEffect {
         id: view
         readonly property rect sg: KWin.SceneView.screen.geometry
         property bool spaceHeld: false
-        // Number of thumbnails currently under the pointer. The pan handler
-        // refuses a left press while this is non-zero, so a drag that starts on
-        // a window moves the window instead of racing the pan.
+        // Number of grabbable things (windows, frame handles) under the pointer.
+        // The pan handler refuses a left press while this is non-zero, so a drag
+        // that starts on one of them moves it instead of racing the pan.
         property int hoverCount: 0
         readonly property bool overWindow: hoverCount > 0
         focus: true
@@ -397,8 +501,7 @@ KWin.SceneEffect {
         }
 
         // Pan: left-drag on the ground, middle-drag anywhere, or hold Space and
-        // left-drag anywhere (Space disables the window handlers, so a drag that
-        // starts on a window pans instead of moving it).
+        // left-drag anywhere (Space disables the other handlers).
         DragHandler {
             id: panDrag
             target: null
@@ -424,6 +527,7 @@ KWin.SceneEffect {
             }
         }
 
+        // Windows.
         Repeater {
             model: effect.entries.length
             delegate: Item {
@@ -491,89 +595,100 @@ KWin.SceneEffect {
             }
         }
 
-        // Monitor frames: where the real screens land on apply. Rigid group;
-        // dragging any edge or name tag moves them all.
+        // Monitor frames: one per desktop per output. A desktop's frames are a
+        // rigid group; dragging any tag or edge moves them all.
         Repeater {
-            model: KWin.Workspace.screens
-            delegate: Item {
-                id: frame
+            model: KWin.Workspace.desktops
+            delegate: Repeater {
+                id: desktopFrames
                 required property var modelData
                 required property int index
-                readonly property rect og: modelData.geometry
-                readonly property color accent: "#4fa3ff"
-                x: (effect.targetX + og.x - effect.viewX) * effect.zoom - view.sg.x
-                y: (effect.targetY + og.y - effect.viewY) * effect.zoom - view.sg.y
-                width: og.width * effect.zoom
-                height: og.height * effect.zoom
-                z: 50000
+                readonly property var desktop: modelData
+                readonly property int desktopIndex: index
+                readonly property bool current: modelData === KWin.Workspace.currentDesktop
+                readonly property color accent: effect.palette[index % effect.palette.length]
+                model: KWin.Workspace.screens
+                delegate: Item {
+                    id: frame
+                    required property var modelData
+                    readonly property rect og: modelData.geometry
+                    x: { effect.revision; return (effect.targetOf(desktopFrames.desktop).x + og.x - effect.viewX) * effect.zoom - view.sg.x; }
+                    y: { effect.revision; return (effect.targetOf(desktopFrames.desktop).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
+                    width: og.width * effect.zoom
+                    height: og.height * effect.zoom
+                    z: 50000 + (desktopFrames.current ? 1 : 0)
 
-                Rectangle {
-                    anchors.fill: parent
-                    color: "transparent"
-                    border.width: 2
-                    border.color: frame.accent
-                    opacity: 0.9
-                }
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: desktopFrames.current ? 2 : 1
+                        border.color: desktopFrames.accent
+                        opacity: desktopFrames.current ? 0.95 : 0.6
+                    }
 
-                // Name tag: the drag handle, like a window caption.
-                Rectangle {
-                    id: tag
-                    x: 0
-                    y: -height - 2
-                    width: tagText.implicitWidth + 12
-                    height: tagText.implicitHeight + 6
-                    radius: 3
-                    color: frame.accent
-                    Text {
-                        id: tagText
-                        anchors.centerIn: parent
-                        text: frame.modelData.name + "  " + frame.og.width + "x" + frame.og.height
-                        color: "#ffffff"
-                        font.pixelSize: 12
-                        font.bold: true
-                    }
-                    HoverHandler {
-                        onHoveredChanged: view.hoverCount += hovered ? 1 : -1
-                        Component.onDestruction: if (hovered) view.hoverCount -= 1
-                    }
-                    DragHandler {
-                        target: null
-                        acceptedButtons: Qt.LeftButton
-                        cursorShape: Qt.SizeAllCursor
-                        property point last: Qt.point(0, 0)
-                        onActiveChanged: last = Qt.point(0, 0)
-                        onActiveTranslationChanged: {
-                            const t = activeTranslation;
-                            effect.dragTarget(t.x - last.x, t.y - last.y);
-                            last = t;
+                    // Name tag: the drag handle, like a window caption.
+                    Rectangle {
+                        id: tag
+                        x: 0
+                        y: -height - 2
+                        width: tagText.implicitWidth + 12
+                        height: tagText.implicitHeight + 6
+                        radius: 3
+                        color: desktopFrames.accent
+                        opacity: desktopFrames.current ? 1 : 0.75
+                        Text {
+                            id: tagText
+                            anchors.centerIn: parent
+                            text: desktopFrames.desktop.name + " · " + frame.modelData.name + "  " + frame.og.width + "x" + frame.og.height
+                            color: "#ffffff"
+                            font.pixelSize: 12
+                            font.bold: true
                         }
-                    }
-                }
-
-                // Edge bands: also drag handles.
-                Repeater {
-                    model: 4
-                    delegate: Item {
-                        required property int index
-                        readonly property int band: 8
-                        x: index === 1 ? frame.width - band : 0
-                        y: index === 3 ? frame.height - band : 0
-                        width: (index === 0 || index === 2) ? frame.width : band
-                        height: (index === 1 || index === 3) ? frame.height : band
                         HoverHandler {
                             onHoveredChanged: view.hoverCount += hovered ? 1 : -1
                             Component.onDestruction: if (hovered) view.hoverCount -= 1
                         }
                         DragHandler {
                             target: null
+                            enabled: !view.spaceHeld
                             acceptedButtons: Qt.LeftButton
                             cursorShape: Qt.SizeAllCursor
                             property point last: Qt.point(0, 0)
                             onActiveChanged: last = Qt.point(0, 0)
                             onActiveTranslationChanged: {
                                 const t = activeTranslation;
-                                effect.dragTarget(t.x - last.x, t.y - last.y);
+                                effect.dragTarget(desktopFrames.desktop, t.x - last.x, t.y - last.y);
                                 last = t;
+                            }
+                        }
+                    }
+
+                    // Edge bands: also drag handles.
+                    Repeater {
+                        model: 4
+                        delegate: Item {
+                            required property int index
+                            readonly property int band: 8
+                            x: index === 1 ? frame.width - band : 0
+                            y: index === 3 ? frame.height - band : 0
+                            width: (index === 0 || index === 2) ? frame.width : band
+                            height: (index === 1 || index === 3) ? frame.height : band
+                            HoverHandler {
+                                onHoveredChanged: view.hoverCount += hovered ? 1 : -1
+                                Component.onDestruction: if (hovered) view.hoverCount -= 1
+                            }
+                            DragHandler {
+                                target: null
+                                enabled: !view.spaceHeld
+                                acceptedButtons: Qt.LeftButton
+                                cursorShape: Qt.SizeAllCursor
+                                property point last: Qt.point(0, 0)
+                                onActiveChanged: last = Qt.point(0, 0)
+                                onActiveTranslationChanged: {
+                                    const t = activeTranslation;
+                                    effect.dragTarget(desktopFrames.desktop, t.x - last.x, t.y - last.y);
+                                    last = t;
+                                }
                             }
                         }
                     }
@@ -623,8 +738,9 @@ KWin.SceneEffect {
                 color: "#ffffff"
                 font.pixelSize: 13
                 font.family: "monospace"
-                text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY) + "   frames " + Math.round(effect.targetX) + ", " + Math.round(effect.targetY)
-                    + "\ndrag ground or space+drag: pan   wheel: zoom   drag window: move   drag frame tag/edge: move screens   click window: pick"
+                text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY)
+                    + "   desktop " + KWin.Workspace.currentDesktop.name
+                    + "\ndrag ground or space+drag: pan   wheel: zoom   drag window: move   drag frame tag/edge: move that desktop's screens   click window: pick"
                     + "\nenter: apply   esc: cancel   home: look through frames   0: origin   f: fit"
             }
         }

@@ -37,7 +37,11 @@ sequence changes and logs its state.
 ./dev/nest.sh cmd extents
 ./dev/nest.sh cmd commit
 ./dev/nest.sh cmd "activate KCalc"        # by caption substring, at 1:1
-./dev/nest.sh cmd "shift 2200 900"        # move the whole plane at 1:1
+./dev/nest.sh cmd "shift 2200 900"        # move the current desktop's viewport at 1:1
+./dev/nest.sh cmd "place 2 2300 100"      # set entry 2's canvas position
+./dev/nest.sh cmd "frames 300 0 1"        # drag desktop 1's frames by screen px
+./dev/nest.sh cmd "desktop 1"             # switch to desktop index 1 (nest has two)
+./dev/nest.sh cmd "pick 0"                # apply with entry 0 on screen
 ./dev/nest.sh cmd list                    # every window with its frame
 ./dev/nest.sh cmd cancel
 ```
@@ -65,6 +69,9 @@ and every entry's canvas rect and frame.
   land partly and fully off-screen and stay there.
 - Activating a fully off-screen window shifts the plane so it is centred and
   returns `view` to match.
-- Zoom to fit.
+- Zoom to fit, including every desktop's frames.
+- Two desktops draw as two frame groups. Placing a window inside Desktop 2's
+  frame and applying moves it to Desktop 2 at the matching geometry, and
+  switching to Desktop 2 at 1:1 moves the view to that desktop's target.
 - The wallpaper plugin renders the same ground at the same offset, headless
   against a stub `WallpaperItem`.

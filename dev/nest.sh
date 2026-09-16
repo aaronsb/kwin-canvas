@@ -50,6 +50,10 @@ HomeShortcut=Ctrl+Alt+Home
 
 [Compositing]
 Backend=OpenGL
+
+[Desktops]
+Number=2
+Rows=1
 CFG
 }
 

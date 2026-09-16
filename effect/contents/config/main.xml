@@ -43,6 +43,10 @@
             <label>Key sequence that returns to the canvas origin.</label>
             <default>Meta+Ctrl+Space</default>
         </entry>
+        <entry name="DesktopGap" type="Int">
+            <label>Gap in canvas pixels between the frame groups of neighbouring virtual desktops when first laid out.</label>
+            <default>240</default>
+        </entry>
         <entry name="FollowActivation" type="Bool">
             <label>Pan the canvas so an activated off-screen window comes on screen.</label>
             <default>true</default>

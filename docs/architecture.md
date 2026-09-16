@@ -10,17 +10,22 @@ Three coordinate spaces:
 | global | KWin's coordinate space across all outputs |
 | screen | one output's local pixels; `global - output.geometry.topLeft` |
 
-One camera and one target. `view` is the canvas point the camera puts at
-global (0,0), and `zoom` is its scale. `target` is the canvas point that will
-be at global (0,0) after apply; the monitor frames are drawn at
-`target + output.geometry` for every output, so they keep KDE's layout and
-move as a rigid group. While the canvas is closed, `view == target`.
+One camera and one target per virtual desktop. `view` is the canvas point
+the camera puts at global (0,0), and `zoom` is its scale. `target(d)` is the
+canvas point at global (0,0) when desktop `d` is shown; its monitor frames are
+drawn at `target(d) + output.geometry` for every output, so each desktop is a
+rigid group of frames in KDE's layout, placed anywhere on the plane. While the
+canvas is closed, `view == target(current desktop)`.
 
 ```
 global = (canvas - view) * zoom
 canvas = view + global / zoom
-frame after apply = canvas - target
+frame geometry = canvas - target(desktop of the window)
 ```
+
+A window's canvas position is its KWin geometry plus its own desktop's
+target. Desktops never placed are laid out in a row beside the current one on
+first open, which moves nothing.
 
 At 1:1, `zoom` is 1 and a window at canvas `c` has KWin frame geometry
 `c - view`. That is the whole trick. KWin's geometry *is* the canvas table,
@@ -40,10 +45,10 @@ per-frame work. Two things happen in this state:
   adjusts `view` to match. The task manager becomes a way to travel.
 - `Meta+Space` opens the canvas.
 
-**Open.** `open()` sets `zoom = 1`, records `entryView`, and snapshots every
-canvas window on the current desktop in stacking order into
-`entries[] = {window, x, y, width, height}` with `x = frame.x + view.x` and so
-on. The per-screen delegate draws the ground and one live `WindowThumbnail`
+**Open.** `open()` sets `zoom = 1`, records `entryView` and a copy of the
+targets, and snapshots every canvas window on every desktop in stacking order
+into `entries[] = {window, desktop, x, y, width, height}` with
+`x = frame.x + target(desktop).x` and so on. The per-screen delegate draws the ground and one live `WindowThumbnail`
 per entry at `(entry - view) * zoom - screen.topLeft`. Pan changes `view`.
 Zoom changes `zoom` and `view` together so the canvas point under the anchor
 stays put:
@@ -57,16 +62,22 @@ view  = c - anchor / zoom
 Dragging a thumbnail edits the entry in canvas units. Nothing touches KWin
 geometry while the canvas is open.
 
-Dragging a frame's name tag or edge band changes `target`. The camera is
-never involved in what gets applied.
+Dragging a frame's name tag or edge band changes that desktop's target. The
+camera is never involved in what gets applied.
 
-**Commit.** `commit()` writes `frameGeometry = entry - target` for every
-entry. Windows not shown (other desktops) share the plane, so they are shifted
-by `entryView - target`. The camera is set to `target` at zoom 1 so the
-1:1 view matches, the ground offset is published, and the effect hides.
-`pick()` first centres the active screen's frame on the window if no frame
-already contains it. `cancel()` restores `entryView` and hides without
-writing anything.
+**Commit.** For every entry, the desktop whose frame contains the entry's
+centre wins: the window is moved to that desktop if it differs, and
+`frameGeometry = entry - target(that desktop)`. An entry in no frame keeps
+its desktop. Minimized and hidden windows are shifted by how much their
+desktop's target moved, so they stay put on the plane. The camera is set to
+the current desktop's target at zoom 1, the ground offset is published, and
+the effect hides. `pick()` first centres the current desktop's active-screen
+frame on the window if no frame contains it. `cancel()` restores the targets
+and `entryView` and hides without writing anything.
+
+**Desktop switch at 1:1.** `currentDesktopChanged` sets `view` to the new
+desktop's target and republishes the ground, so the wallpaper scrolls to
+where that desktop's viewport sits on the plane.
 
 ## Why the ground has to be drawn twice
 
