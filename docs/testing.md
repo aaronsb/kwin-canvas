@@ -42,6 +42,9 @@ sequence changes and logs its state.
 ./dev/nest.sh cmd "frames 300 0 1"        # drag desktop 1's frames by screen px
 ./dev/nest.sh cmd "desktop 1"             # switch to desktop index 1 (nest has two)
 ./dev/nest.sh cmd "pick 0"                # apply with entry 0 on screen
+./dev/nest.sh cmd "resize 0 1000 700"     # command entry 0's window to a size
+./dev/nest.sh cmd "adddesktop 0"          # insert a desktop after index 0
+./dev/nest.sh cmd "rmdesktop 1"           # remove desktop index 1
 ./dev/nest.sh cmd list                    # every window with its frame
 ./dev/nest.sh cmd cancel
 ```

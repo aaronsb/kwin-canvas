@@ -29,6 +29,7 @@
     While the canvas is closed, view == target(current desktop).
 */
 import QtQuick
+import org.kde.kirigami as Kirigami
 import org.kde.kwin as KWin
 
 KWin.SceneEffect {
@@ -85,6 +86,13 @@ KWin.SceneEffect {
         return t;
     }
 
+    // Read-only lookup for bindings, so drawing a frame never fixes a
+    // target before ensureTargets() has laid the desktop out.
+    function peekTarget(d) {
+        const t = targets[d.id];
+        return t ? t : { x: viewX, y: viewY };
+    }
+
     function desktopIndex(d) {
         const ds = KWin.Workspace.desktops;
         for (let i = 0; i < ds.length; ++i) if (ds[i] === d) return i;
@@ -98,12 +106,53 @@ KWin.SceneEffect {
         const ds = KWin.Workspace.desktops;
         const cur = KWin.Workspace.currentDesktop;
         const ci = desktopIndex(cur);
-        targets[cur.id] = { x: viewX, y: viewY };
+        const base = targetOf(cur);
         const vs = KWin.Workspace.virtualScreenGeometry;
         const step = vs.width + configuration.DesktopGap;
+        // Rightmost placed target, so later additions never overlap.
+        let right = -Infinity;
         for (let i = 0; i < ds.length; ++i) {
-            if (!targets[ds[i].id]) targets[ds[i].id] = { x: viewX + (i - ci) * step, y: viewY };
+            const t = targets[ds[i].id];
+            if (t) right = Math.max(right, t.x);
         }
+        for (let i = 0; i < ds.length; ++i) {
+            if (targets[ds[i].id]) continue;
+            const x = right === -Infinity ? base.x + (i - ci) * step : right + step;
+            targets[ds[i].id] = { x: x, y: base.y };
+            right = Math.max(right, x);
+        }
+    }
+
+    // A desktop was added or removed. KWin re-homes the windows of a removed
+    // desktop; their geometry is unchanged, so they sit at the same screen
+    // spot in the new desktop's viewport.
+    function desktopsChanged() {
+        ensureTargets();
+        if (!visible) return;
+        const ds = KWin.Workspace.desktops;
+        for (let i = 0; i < entries.length; ++i) {
+            const e = entries[i];
+            if (e.window.deleted) continue;
+            let alive = false;
+            for (let j = 0; j < ds.length; ++j) if (ds[j] === e.desktop) alive = true;
+            const d = desktopOf(e.window);
+            if (alive && d === e.desktop) continue;
+            const t = targetOf(d);
+            e.desktop = d;
+            e.x = e.frameX + t.x;
+            e.y = e.frameY + t.y;
+        }
+        revision++;
+    }
+
+    function addDesktopAfter(d) {
+        const n = KWin.Workspace.desktops.length;
+        KWin.Workspace.createDesktop(desktopIndex(d) + 1, "Desktop " + (n + 1));
+    }
+
+    function removeDesktop(d) {
+        if (desktopIndex(d) === 0) return;
+        KWin.Workspace.removeDesktop(d);
     }
 
     function copyTargets(src) {
@@ -118,7 +167,7 @@ KWin.SceneEffect {
         const ds = KWin.Workspace.desktops;
         const screens = KWin.Workspace.screens;
         for (let i = 0; i < ds.length; ++i) {
-            const t = targetOf(ds[i]);
+            const t = peekTarget(ds[i]);
             for (let j = 0; j < screens.length; ++j) {
                 const g = screens[j].geometry;
                 if (cx >= t.x + g.x && cx < t.x + g.x + g.width && cy >= t.y + g.y && cy < t.y + g.y + g.height) return ds[i];
@@ -229,7 +278,7 @@ KWin.SceneEffect {
         const vs = KWin.Workspace.virtualScreenGeometry;
         const ds = KWin.Workspace.desktops;
         for (let i = 0; i < ds.length; ++i) {
-            const tg = targetOf(ds[i]);
+            const tg = peekTarget(ds[i]);
             l = Math.min(l, tg.x + vs.x); t = Math.min(t, tg.y + vs.y);
             r = Math.max(r, tg.x + vs.x + vs.width); b = Math.max(b, tg.y + vs.y + vs.height);
         }
@@ -247,6 +296,7 @@ KWin.SceneEffect {
         entryViewX = viewX;
         entryViewY = viewY;
         zoom = 1.0;
+        targets[KWin.Workspace.currentDesktop.id] = { x: viewX, y: viewY };
         ensureTargets();
         entryTargets = copyTargets(targets);
         snapshot();
@@ -427,6 +477,7 @@ KWin.SceneEffect {
             const dy = Math.round(area.y + (area.height - g.height) / 2 - g.y);
             effect.shiftAll(dx, dy);
         }
+        function onDesktopsChanged() { Qt.callLater(effect.desktopsChanged); }
         function onWindowAdded(w) { if (effect.visible) Qt.callLater(effect.resync); }
         function onWindowRemoved(w) { if (effect.visible) Qt.callLater(effect.resync); }
         // Switching desktops at 1:1 switches viewport: the ground follows.
@@ -502,6 +553,8 @@ KWin.SceneEffect {
             break;
         }
         case "desktop": KWin.Workspace.currentDesktop = KWin.Workspace.desktops[Number(a[1])]; break;
+        case "adddesktop": addDesktopAfter(KWin.Workspace.desktops[Number(a[1])]); break;
+        case "rmdesktop": removeDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
         case "list": {
             const all = KWin.Workspace.stackingOrder;
             let s = "kwin-canvas windows:";
@@ -523,7 +576,7 @@ KWin.SceneEffect {
         let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") desktop=" + cur.name + " entries=" + entries.length;
         const ds = KWin.Workspace.desktops;
         for (let i = 0; i < ds.length; ++i) {
-            const t = targetOf(ds[i]);
+            const t = peekTarget(ds[i]);
             s += "\n  {" + i + "} " + ds[i].name + " target=(" + t.x.toFixed(0) + "," + t.y.toFixed(0) + ")";
         }
         for (let i = 0; i < entries.length; ++i) {
@@ -757,8 +810,8 @@ KWin.SceneEffect {
                     id: frame
                     required property var modelData
                     readonly property rect og: modelData.geometry
-                    x: { effect.revision; return (effect.targetOf(desktopFrames.desktop).x + og.x - effect.viewX) * effect.zoom - view.sg.x; }
-                    y: { effect.revision; return (effect.targetOf(desktopFrames.desktop).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
+                    x: { effect.revision; return (effect.peekTarget(desktopFrames.desktop).x + og.x - effect.viewX) * effect.zoom - view.sg.x; }
+                    y: { effect.revision; return (effect.peekTarget(desktopFrames.desktop).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
                     width: og.width * effect.zoom
                     height: og.height * effect.zoom
                     z: 50000 + (desktopFrames.current ? 1 : 0)
@@ -771,23 +824,74 @@ KWin.SceneEffect {
                         opacity: desktopFrames.current ? 0.95 : 0.6
                     }
 
-                    // Name tag: the drag handle, like a window caption.
+                    // Name tag: the drag handle, like a window caption, with
+                    // the desktop controls KDE's pager has: add after, remove.
                     Rectangle {
                         id: tag
                         x: 0
                         y: -height - 2
-                        width: tagText.implicitWidth + 12
-                        height: tagText.implicitHeight + 6
+                        width: tagRow.implicitWidth + 12
+                        height: tagRow.implicitHeight + 6
                         radius: 3
                         color: desktopFrames.accent
                         opacity: desktopFrames.current ? 1 : 0.75
-                        Text {
-                            id: tagText
+                        Row {
+                            id: tagRow
                             anchors.centerIn: parent
-                            text: desktopFrames.desktop.name + " · " + frame.modelData.name + "  " + frame.og.width + "x" + frame.og.height
-                            color: "#ffffff"
-                            font.pixelSize: 12
-                            font.bold: true
+                            spacing: 6
+                            Text {
+                                id: tagText
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: desktopFrames.desktop.name + " · " + frame.modelData.name + "  " + frame.og.width + "x" + frame.og.height
+                                color: "#ffffff"
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
+                            Rectangle {
+                                id: addButton
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 18; height: 18; radius: 3
+                                color: addHover.hovered ? "#60ffffff" : "#30ffffff"
+                                Kirigami.Icon {
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    source: "list-add"
+                                    color: "#ffffff"
+                                }
+                                HoverHandler {
+                                    id: addHover
+                                    onHoveredChanged: view.hoverCount += hovered ? 1 : -1
+                                    Component.onDestruction: if (hovered) view.hoverCount -= 1
+                                }
+                                TapHandler {
+                                    acceptedButtons: Qt.LeftButton
+                                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                                    onTapped: effect.addDesktopAfter(desktopFrames.desktop)
+                                }
+                            }
+                            Rectangle {
+                                id: removeButton
+                                visible: desktopFrames.desktopIndex > 0
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 18; height: 18; radius: 3
+                                color: removeHover.hovered ? "#80ff4040" : "#30ffffff"
+                                Kirigami.Icon {
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    source: "edit-delete"
+                                    color: "#ffffff"
+                                }
+                                HoverHandler {
+                                    id: removeHover
+                                    onHoveredChanged: view.hoverCount += hovered ? 1 : -1
+                                    Component.onDestruction: if (hovered) view.hoverCount -= 1
+                                }
+                                TapHandler {
+                                    acceptedButtons: Qt.LeftButton
+                                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                                    onTapped: effect.removeDesktop(desktopFrames.desktop)
+                                }
+                            }
                         }
                         HoverHandler {
                             onHoveredChanged: view.hoverCount += hovered ? 1 : -1

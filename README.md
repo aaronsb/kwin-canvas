@@ -51,6 +51,9 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | wheel | | zoom at the cursor |
 | drag a window | | move it on the plane |
 | drag a frame's tag or edge | | move that desktop's frames (all together) |
+| drag a window's edge or corner | | resize it, live |
+| + on a frame tag | | add a desktop after that one |
+| trash on a frame tag | | remove that desktop (never the first) |
 | click a window | | apply with it on screen, focus it |
 | Enter | | apply and close |
 | Esc | | cancel, nothing moves |
