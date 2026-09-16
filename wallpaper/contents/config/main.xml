@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="OffsetX" type="Double">
+      <label>Canvas x at global (0,0). Written by the kwin-canvas effect.</label>
+      <default>0</default>
+    </entry>
+    <entry name="OffsetY" type="Double">
+      <default>0</default>
+    </entry>
+    <entry name="GridBase" type="Int">
+      <default>64</default>
+    </entry>
+    <entry name="GridOctaveFactor" type="Int">
+      <default>8</default>
+    </entry>
+    <entry name="GridOctaves" type="Int">
+      <default>4</default>
+    </entry>
+    <entry name="Background" type="Color">
+      <default>#1c1f26</default>
+    </entry>
+    <entry name="LineColor" type="Color">
+      <default>#7f8fb0</default>
+    </entry>
+    <entry name="TileImage" type="String">
+      <default></default>
+    </entry>
+    <entry name="ShowLabels" type="Bool">
+      <default>true</default>
+    </entry>
+  </group>
+</kcfg>

@@ -1,0 +1,68 @@
+# Testing
+
+The effect moves windows and grabs input, so a bad build in the live session is
+a session you cannot use. Everything runs in a nested KWin first.
+
+## The nest
+
+`dev/nest.sh up` starts `kwin_wayland --width 1920 --height 1080` as a window
+of the live session, under `dbus-run-session` so it has its own `org.kde.KWin`
+and its own `kglobalaccel`, and with `XDG_CONFIG_HOME` pointed at a seeded
+config that enables the effect and disables Zoom and Overview. The live kwinrc
+is never touched.
+
+```bash
+./dev/nest.sh up
+./dev/nest.sh clients            # kcalc konsole kwrite; NEST_CLIENTS overrides
+./dev/nest.sh run firefox        # any client
+./dev/nest.sh toggle             # Meta+Space via the nest's kglobalaccel
+./dev/nest.sh shot [file]        # spectacle against the nested compositor
+./dev/nest.sh log [n]
+./dev/nest.sh down
+```
+
+## Driving the effect without a mouse
+
+QML effects cannot export D-Bus, so the harness writes a command and a
+sequence number into the nest's kwinrc and calls
+`org.kde.kwin.Effects.reconfigureEffect`. The effect runs the command when the
+sequence changes and logs its state.
+
+```bash
+./dev/nest.sh cmd open
+./dev/nest.sh cmd "pan -1500 -400"        # screen px
+./dev/nest.sh cmd "zoom 0.4 960 540"      # zoom [anchorX anchorY], global px
+./dev/nest.sh cmd extents
+./dev/nest.sh cmd commit
+./dev/nest.sh cmd "activate KCalc"        # by caption substring, at 1:1
+./dev/nest.sh cmd "shift 2200 900"        # move the whole plane at 1:1
+./dev/nest.sh cmd list                    # every window with its frame
+./dev/nest.sh cmd cancel
+```
+
+Each command prints the effect state afterwards: `visible`, `zoom`, `view`,
+and every entry's canvas rect and frame.
+
+## Things that cost time
+
+- **Output goes to journald**, not stderr, when stderr is not a TTY. The nest
+  sets `QT_LOGGING_TO_CONSOLE=1` so `kwin.log` gets it.
+- **The QML component cache.** `unloadEffect` and `loadEffect` reload the
+  cached component, not the file. `nest.sh reload` restarts the nest.
+- **Socket name.** The Wayland socket lands in `$XDG_RUNTIME_DIR`, so it must
+  not share a name with the harness state directory.
+- **A JS exception mid-commit leaves the effect open.** Check the log for
+  `TypeError` before trusting a `visible=true` in the state line.
+
+## What has been verified in the nest
+
+- Effect loads with no QML errors.
+- Open at zoom 1 is pixel-identical to the desktop.
+- Cursor-anchored zoom out, ground grid with octaves, labels, axes, HUD.
+- Pan then commit writes `frame = canvas - view` for every window; windows
+  land partly and fully off-screen and stay there.
+- Activating a fully off-screen window shifts the plane so it is centred and
+  returns `view` to match.
+- Zoom to fit.
+- The wallpaper plugin renders the same ground at the same offset, headless
+  against a stub `WallpaperItem`.

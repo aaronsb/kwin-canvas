@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
+    <kcfgfile name=""/>
+    <group name="">
+        <entry name="ZoomMin" type="Double">
+            <label>Smallest zoom the overview reaches (1.0 is native scale).</label>
+            <default>0.05</default>
+        </entry>
+        <entry name="ZoomStep" type="Double">
+            <label>Zoom factor per wheel notch.</label>
+            <default>1.15</default>
+        </entry>
+        <entry name="GridBase" type="Int">
+            <label>Minor grid spacing in canvas pixels.</label>
+            <default>64</default>
+        </entry>
+        <entry name="GridOctaveFactor" type="Int">
+            <label>Each coarser grid octave is this many times larger.</label>
+            <default>8</default>
+        </entry>
+        <entry name="GridOctaves" type="Int">
+            <label>Number of grid octaves drawn.</label>
+            <default>4</default>
+        </entry>
+        <entry name="Background" type="Color">
+            <default>#1c1f26</default>
+        </entry>
+        <entry name="LineColor" type="Color">
+            <default>#7f8fb0</default>
+        </entry>
+        <entry name="TileImage" type="String">
+            <label>Optional image tiled across the canvas at 1:1. Empty draws the grid.</label>
+            <default></default>
+        </entry>
+        <entry name="FollowActivation" type="Bool">
+            <label>Pan the canvas so an activated off-screen window comes on screen.</label>
+            <default>true</default>
+        </entry>
+        <entry name="PublishGround" type="Bool">
+            <label>Write the ground offset to the kwin-canvas-ground wallpaper via plasmashell.</label>
+            <default>true</default>
+        </entry>
+        <entry name="AutoActivate" type="Bool">
+            <label>Open the canvas as soon as the effect loads (nested test harness).</label>
+            <default>false</default>
+        </entry>
+        <entry name="DebugCommand" type="String">
+            <label>Command executed on reconfigure when DebugSeq changes (nested test harness).</label>
+            <default></default>
+        </entry>
+        <entry name="DebugSeq" type="Int">
+            <default>0</default>
+        </entry>
+    </group>
+</kcfg>

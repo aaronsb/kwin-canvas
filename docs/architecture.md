@@ -1,0 +1,148 @@
+# Architecture
+
+## The model
+
+Three coordinate spaces:
+
+| Space | Meaning |
+|---|---|
+| canvas | the plane windows live on; unbounded |
+| global | KWin's coordinate space across all outputs |
+| screen | one output's local pixels; `global - output.geometry.topLeft` |
+
+One camera: `view` is the canvas point at global (0,0), and `zoom` is the
+scale.
+
+```
+global = (canvas - view) * zoom
+canvas = view + global / zoom
+```
+
+At 1:1, `zoom` is 1 and a window at canvas `c` has KWin frame geometry
+`c - view`. That is the whole trick. KWin's geometry *is* the canvas table,
+offset by one vector. Windows beyond the screen are simply at off-screen
+positions, which KWin allows and stops sending frame callbacks for.
+
+The effect holds only `view` between activations. Everything else is
+re-derived from live geometry each time the canvas opens.
+
+## Lifecycle
+
+**Closed (1:1).** The effect is not running. No transform, no grab, no
+per-frame work. Two things happen in this state:
+
+- `windowActivated` on a window with no on-screen intersection shifts every
+  canvas window by the same delta so it lands centred on its output, and
+  adjusts `view` to match. The task manager becomes a way to travel.
+- `Meta+Space` opens the canvas.
+
+**Open.** `open()` sets `zoom = 1`, records `entryView`, and snapshots every
+canvas window on the current desktop in stacking order into
+`entries[] = {window, x, y, width, height}` with `x = frame.x + view.x` and so
+on. The per-screen delegate draws the ground and one live `WindowThumbnail`
+per entry at `(entry - view) * zoom - screen.topLeft`. Pan changes `view`.
+Zoom changes `zoom` and `view` together so the canvas point under the anchor
+stays put:
+
+```
+c     = view + anchor / zoom
+zoom  = z
+view  = c - anchor / zoom
+```
+
+Dragging a thumbnail edits the entry in canvas units. Nothing touches KWin
+geometry while the canvas is open.
+
+**Commit.** `commit()` snaps `zoom` to 1 anchored at the cursor, then writes
+`frameGeometry = entry - view` for every entry. Windows not shown (other
+desktops) share the plane, so they are shifted by `entryView - view`. Then the
+ground offset is published and the effect hides. `cancel()` restores
+`entryView` and hides without writing anything.
+
+## Why the ground has to be drawn twice
+
+The ground must scroll with the plane at 1:1 and scale with it when zoomed.
+No layer-shell wallpaper can do the first, because the client that draws it
+has no idea the plane exists. So the effect draws the ground while it is open,
+and a Plasma wallpaper plugin draws the same ground while it is closed. Both
+use `shared/Ground.qml` with the same inputs, so the switch at open and close
+is pixel-identical.
+
+The wallpaper needs `view`, and neither a KWin effect nor a wallpaper can
+export D-Bus. The effect calls `org.kde.PlasmaShell.evaluateScript` with a
+Plasma script that writes `OffsetX/OffsetY` into the wallpaper's config group
+on every desktop containment. That is one config write per commit, and the
+wallpaper QML reads `configuration.OffsetX` live.
+
+The ground itself is procedural: grid octaves at `base * factor^k`, each fading
+in as its screen spacing crosses 14px and fully drawn by 72px, so there is
+always a legible spacing at any zoom. Coordinate labels at the intersections
+of the coarser octaves make each region unique. The axes through canvas (0,0)
+are the one landmark that never repeats. Alternatively a tile image, mipmapped
+and scaled with the view.
+
+## KWin API facts this rests on
+
+Verified against the 6.7.5 source, in `src/`:
+
+- A QML effect is a KPackage of type `KWin/Effect` with
+  `X-Plasma-API: declarativescript`, loaded from
+  `~/.local/share/kwin/effects/<id>/contents/ui/main.qml`
+  (`effect/effectloader.cpp`). The root must be `SceneEffect` from
+  `org.kde.kwin`.
+- `SceneEffect.visible` starts and stops the effect. The delegate is
+  instantiated once per screen with `SceneView.screen` attached
+  (`scripting/scriptedquicksceneeffect.h`, `effect/quickeffect.h`).
+- Pointer and wheel events are forwarded to the delegate's QML scene, so
+  `DragHandler`, `WheelHandler`, `TapHandler` and `HoverHandler` work as
+  normal. Keys arrive through `grabbedKeyboardEvent` and reach `Keys.onPressed`
+  on the focused item.
+- `Window.frameGeometry` is writable and calls `Window::moveResize`
+  (`window.h`). A JS object with `x, y, width, height` converts to `RectF`
+  (`scripting/scripting.cpp`). No clamping happens on that path.
+  `checkWorkspacePosition` runs on desktop send, output layout change, and
+  placement, so those are the moments off-screen windows can be pulled back.
+- `WindowThumbnail` takes `client` and `refOffscreenRendering()`s it, so
+  windows that are off-screen or minimized still render live
+  (`scripting/windowthumbnailitem.cpp`).
+- The QML `Workspace` singleton is `DeclarativeScriptWorkspaceWrapper`. It has
+  `stackingOrder`, `windows`, `activeWindow`, `cursorPos`, `activeScreen`,
+  `virtualScreenGeometry`, `clientArea()`, and the `windowActivated` signal.
+  It does **not** have `windowList()`; that exists only on the JS-script
+  wrapper.
+- `ShortcutHandler` registers a global shortcut; global shortcuts fire even
+  while the effect holds the keyboard.
+- `DBusCall` from `org.kde.kwin` makes an async call with `arguments` and
+  `call()`.
+- `org.kde.KWin /Effects reconfigureEffect <id>` reparses kwinrc and calls the
+  effect's `reconfigure()`. The plain `/KWin reconfigure` does not reach
+  effects.
+- The QML engine caches components by URL. An edited `main.qml` does not load
+  on `unloadEffect` + `loadEffect`; restart KWin.
+
+## Known limits
+
+- **No interaction while zoomed.** The canvas is a navigation mode. This is
+  the trade that makes the rest possible.
+- **Output changes.** Hotplug or resolution change runs
+  `checkWorkspacePosition` on every window and may pull far-off windows
+  toward the new layout. The effect re-derives from geometry so nothing is
+  lost, but positions can shift.
+- **X11 windows** have 16-bit coordinates. Beyond about ±32k canvas pixels
+  they cannot be placed.
+- **Persistence.** `view` lives in the effect object and resets to (0,0) when
+  KWin restarts. Window positions survive since they are real geometry, but
+  the ground offset does not until the next commit.
+- **Stock Zoom effect** binds Meta+wheel. Disable it or rebind.
+- **Untested live.** The `evaluateScript` handoff and the wallpaper plugin have
+  been rendered in isolation but not yet run inside a live plasmashell.
+
+## Next
+
+- Snap `zoom` to 1 with a short animation on commit.
+- Drawing limits: a drawn sheet boundary that only grows, and `ZoomMin` from
+  it rather than a constant.
+- Auto-pan when dragging a window to the screen edge at 1:1. The move is
+  KWin's; the effect can watch `Window.move` and shift the plane on a timer.
+- Bookmarks, and a minimap while the canvas is open.
+- Persist `view` in the effect's config on commit.
