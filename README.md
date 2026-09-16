@@ -33,9 +33,19 @@ you zoom out, so the plane has landmarks and the zoom has something to anchor.
 
 ## Install
 
+From a release tarball, no checkout needed:
+
+```bash
+kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.0.kwineffect.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.0.tar.gz
+```
+
+then enable **Canvas** in System Settings → Desktop Effects. From a checkout:
+
 ```bash
 make install    # kpackagetool6 into ~/.local/share
 make enable     # turn the effect on in the running session
+make dist       # build the tarballs yourself
 ```
 
 Then pick **Canvas Ground** as the desktop wallpaper in Desktop Settings, and

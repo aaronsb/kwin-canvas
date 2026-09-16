@@ -11,7 +11,8 @@
         "Icon": "view-grid",
         "Id": "kwin-canvas-ground",
         "License": "GPL-2.0-or-later",
-        "Name": "Canvas Ground"
+        "Name": "Canvas Ground",
+        "Version": "0.1.0"
     },
     "X-KDE-ParentApp": "org.kde.plasmashell"
 }

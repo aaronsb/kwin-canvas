@@ -6,6 +6,8 @@
 EFFECT_ID   := kwin-canvas
 WALL_ID     := kwin-canvas-ground
 BUILD       := build
+DIST        := dist
+VERSION     := $(shell cat VERSION)
 KPT         := kpackagetool6
 QDBUS       := qdbus6
 NEST        := ./dev/nest.sh
@@ -14,7 +16,7 @@ PYTHON      := python3
 .DEFAULT_GOAL := help
 .PHONY: help deps deps-install install uninstall reload enable disable status \
         tools fixtures play nest nest-down nest-clients nest-fixtures nest-reload nest-shot nest-log nest-clean nest-cmd \
-        test golden demo video clean stage
+        test golden demo video clean stage dist release
 
 help: ## Show this help
 	@echo "kwin-canvas"
@@ -120,5 +122,21 @@ demo: install fixtures tools ## Drive a scripted session with real input; screen
 video: ## Assemble build/demo frames into demo.mp4 and demo.gif (run `make demo` first)
 	demo/demo.sh --video-only
 
+# ---- distribution -----------------------------------------------------------
+dist: stage ## Tarballs of both packages for kpackagetool6 or the KDE Store (dist/)
+	rm -rf $(DIST); mkdir -p $(DIST)
+	tar -C $(BUILD)/effect -czf $(DIST)/kwin-canvas-$(VERSION).kwineffect.tar.gz .
+	tar -C $(BUILD)/wallpaper -czf $(DIST)/kwin-canvas-ground-$(VERSION).tar.gz .
+	@cd $(DIST) && sha256sum *.tar.gz > SHA256SUMS && cat SHA256SUMS
+	@echo
+	@echo "install:  kpackagetool6 --type KWin/Effect --install $(DIST)/kwin-canvas-$(VERSION).kwineffect.tar.gz"
+	@echo "          kpackagetool6 --type Plasma/Wallpaper --install $(DIST)/kwin-canvas-ground-$(VERSION).tar.gz"
+
+release: dist ## Tag v$(VERSION) and publish a GitHub release with the tarballs (needs a clean tree)
+	@git diff --quiet || { echo "uncommitted changes"; exit 1; }
+	git tag -a v$(VERSION) -m "kwin-canvas $(VERSION)"
+	git push origin main v$(VERSION)
+	gh release create v$(VERSION) $(DIST)/*.tar.gz $(DIST)/SHA256SUMS --title "kwin-canvas $(VERSION)" --notes-file docs/release-notes.md
+
 clean: ## Remove build output
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) $(DIST)

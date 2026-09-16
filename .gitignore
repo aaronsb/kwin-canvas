@@ -1,2 +1,3 @@
 build/
 tests/fixtures/.*.kate-swp
+dist/
