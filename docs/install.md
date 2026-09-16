@@ -37,7 +37,15 @@ to focus it. `make nest-down` closes it.
 
    ```bash
    kwriteconfig6 --file kwinrc --group Plugins --key kwin-canvasEnabled true
-   qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure
+   qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect kwin-canvas
+   ```
+
+   The config line keeps it enabled across logins; the D-Bus call loads it
+   into the running KWin. KWin's plain `reconfigure` does not load a newly
+   enabled effect. Check with:
+
+   ```bash
+   qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.isEffectLoaded kwin-canvas
    ```
 
 4. Press **Meta+Space**. The canvas opens zoomed out over your windows.
@@ -105,7 +113,7 @@ Untick **Canvas** in Desktop Effects, or:
 
 ```bash
 kwriteconfig6 --file kwinrc --group Plugins --key kwin-canvasEnabled false
-qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure
+qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect kwin-canvas
 kpackagetool6 --type KWin/Effect --remove kwin-canvas
 kpackagetool6 --type Plasma/Wallpaper --remove kwin-canvas-ground
 ```

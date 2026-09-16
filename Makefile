@@ -56,11 +56,11 @@ reload: install ## Reinstall and reload the effect in the live session (QML chan
 
 enable: ## Turn the effect on in the live session (disable the stock Zoom effect if it owns Meta+wheel)
 	kwriteconfig6 --file kwinrc --group Plugins --key $(EFFECT_ID)Enabled true
-	$(QDBUS) org.kde.KWin /KWin org.kde.KWin.reconfigure
+	$(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect $(EFFECT_ID)
 
 disable: ## Turn the effect off in the live session
 	kwriteconfig6 --file kwinrc --group Plugins --key $(EFFECT_ID)Enabled false
-	$(QDBUS) org.kde.KWin /KWin org.kde.KWin.reconfigure
+	$(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect $(EFFECT_ID)
 
 status: ## Show whether the packages are installed and the effect loaded
 	@echo "effect loaded in live session: $$($(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.isEffectLoaded $(EFFECT_ID) 2>/dev/null || echo unknown)"
