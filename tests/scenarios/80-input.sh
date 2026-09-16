@@ -22,6 +22,8 @@ run_scenario() {
     assert_near "ground drag pans x" "$(sget viewx)" -940 2
     assert_near "ground drag pans y" "$(sget viewy)" -560 2
     # Drag KCalc by its centre, 100 by 50 screen px: 250 by 125 canvas units at zoom 0.4.
+    # Snapping off: this measures the drag, not the snap (98 covers snapping).
+    c "snap edges off"; c "snap corners off"; c "snap grid off"
     read -r sx sy <<<"$(screen_of $(( $(eget KCalc x) + 240 )) $(( $(eget KCalc y) + 210 )))"
     printf "drag $sx $sy $((sx + 100)) $((sy + 50))\n" | input
     sleep 0.3; c state

@@ -217,6 +217,10 @@ the settings pages through `KCMLauncher.openSystemSettings`, as Overview does.
 
 ## Known limits
 
+- **Frames are not editable.** They are the outputs in KDE's display
+  arrangement, read from `Workspace.screens`; changing that layout is
+  Display Configuration's job and the frames follow.
+
 - **No interaction while zoomed.** The canvas is a navigation mode. This is
   the trade that makes the rest possible.
 - **Output changes.** Hotplug or resolution change runs

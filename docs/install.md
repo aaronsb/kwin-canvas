@@ -88,6 +88,10 @@ it.
 
 ## Known limits in 0.1.1
 
+- The monitor frames reproduce KDE's display arrangement and the canvas
+  never changes it. Rearrange or resize displays in System Settings →
+  Display Configuration; the frames follow.
+
 - No interaction with windows while zoomed out; the canvas is for arranging
   and navigating, work happens at 1:1.
 - X11 (XWayland) windows cannot be placed beyond about ±32k pixels.
