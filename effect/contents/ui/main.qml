@@ -336,11 +336,13 @@ KWin.SceneEffect {
             tileImage: effect.configuration.TileImage
         }
 
-        // Pan: middle-drag anywhere, or hold Space and left-drag (the hand tool).
+        // Pan: left-drag on the ground, middle-drag anywhere, or hold Space and
+        // left-drag anywhere (Space disables the window handlers, so a drag that
+        // starts on a window pans instead of moving it).
         DragHandler {
             id: panDrag
             target: null
-            acceptedButtons: view.spaceHeld ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
             cursorShape: active ? Qt.ClosedHandCursor : (view.spaceHeld ? Qt.OpenHandCursor : Qt.ArrowCursor)
             property point last: Qt.point(0, 0)
             onActiveChanged: last = Qt.point(0, 0)
@@ -468,7 +470,7 @@ KWin.SceneEffect {
                 font.pixelSize: 13
                 font.family: "monospace"
                 text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY)
-                    + "\nspace+drag or middle-drag: pan   wheel: zoom   click: pick   drag window: move\nenter: apply   esc: cancel   home: origin   f: fit"
+                    + "\ndrag ground or space+drag: pan   wheel: zoom   click: pick   drag window: move\nenter: apply   esc: cancel   home: origin   f: fit"
             }
         }
     }
