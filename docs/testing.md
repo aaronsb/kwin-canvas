@@ -15,7 +15,9 @@ is never touched.
 ./dev/nest.sh up
 ./dev/nest.sh clients            # kcalc konsole kwrite; NEST_CLIENTS overrides
 ./dev/nest.sh run firefox        # any client
-./dev/nest.sh toggle             # Meta+Space via the nest's kglobalaccel
+./dev/nest.sh toggle             # the toggle shortcut via the nest's kglobalaccel
+# Inside the nest the chords are Ctrl+Alt+Space and Ctrl+Alt+Home, because the
+# outer desktop sees Meta chords first.
 ./dev/nest.sh shot [file]        # spectacle against the nested compositor
 ./dev/nest.sh log [n]
 ./dev/nest.sh down

@@ -39,7 +39,7 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 
 | Key | At 1:1 | Canvas open |
 |---|---|---|
-| Meta+Space | open the canvas | apply and close |
+| Meta+Space (configurable) | open the canvas | apply and close |
 | Meta+Ctrl+Space | jump home | jump home |
 | drag on ground | | pan |
 | wheel | | zoom at the cursor |

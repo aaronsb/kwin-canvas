@@ -229,13 +229,13 @@ KWin.SceneEffect {
     KWin.ShortcutHandler {
         name: "Toggle Canvas"
         text: "Canvas: open or close the canvas"
-        sequence: "Meta+Space"
+        sequence: effect.configuration.ToggleShortcut
         onActivated: effect.toggle()
     }
     KWin.ShortcutHandler {
         name: "Canvas Home"
         text: "Canvas: return to the origin"
-        sequence: "Meta+Ctrl+Space"
+        sequence: effect.configuration.HomeShortcut
         onActivated: {
             if (effect.visible) { effect.home(); return; }
             effect.open();

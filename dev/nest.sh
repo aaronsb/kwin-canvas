@@ -45,6 +45,8 @@ contrastEnabled=false
 [Effect-kwin-canvas]
 PublishGround=false
 DebugSeq=0
+ToggleShortcut=Ctrl+Alt+Space
+HomeShortcut=Ctrl+Alt+Home
 
 [Compositing]
 Backend=OpenGL

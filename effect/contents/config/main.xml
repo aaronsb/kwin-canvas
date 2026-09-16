@@ -35,6 +35,14 @@
             <label>Optional image tiled across the canvas at 1:1. Empty draws the grid.</label>
             <default></default>
         </entry>
+        <entry name="ToggleShortcut" type="String">
+            <label>Key sequence that opens and closes the canvas.</label>
+            <default>Meta+Space</default>
+        </entry>
+        <entry name="HomeShortcut" type="String">
+            <label>Key sequence that returns to the canvas origin.</label>
+            <default>Meta+Ctrl+Space</default>
+        </entry>
         <entry name="FollowActivation" type="Bool">
             <label>Pan the canvas so an activated off-screen window comes on screen.</label>
             <default>true</default>
