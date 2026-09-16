@@ -36,7 +36,14 @@ you zoom out, so the plane has landmarks and the zoom has something to anchor.
 
 ## Install
 
-Full walkthrough in [docs/install.md](docs/install.md). Short version, from a
+Full walkthrough in [docs/install.md](docs/install.md). On Arch, from the
+[AUR](https://aur.archlinux.org/packages/kwin-canvas):
+
+```bash
+yay -S kwin-canvas      # or paru, or makepkg from the AUR clone
+```
+
+then enable **Canvas** in System Settings → Desktop Effects. From a
 release tarball with no checkout:
 
 ```bash

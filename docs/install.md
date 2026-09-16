@@ -20,6 +20,16 @@ to focus it. `make nest-down` closes it.
 
 ## Install for real
 
+### On Arch, from the AUR
+
+```bash
+yay -S kwin-canvas
+```
+
+The package puts both QML packages under `/usr/share`. Then enable the
+effect as in step 3 below, or tick **Canvas** in Desktop Effects. After an
+upgrade, log out and in once: KWin keeps the version it compiled at login.
+
 ### From the release tarballs
 
 1. Download `kwin-canvas-0.2.0.kwineffect.tar.gz` from
