@@ -167,6 +167,7 @@ dist: stage ## Tarballs of both packages for kpackagetool6 or the KDE Store (dis
 pkgbuild: ## Write dist/PKGBUILD for the AUR from packaging/PKGBUILD.in at this VERSION
 	mkdir -p $(DIST)
 	sed 's/@VERSION@/$(VERSION)/g' packaging/PKGBUILD.in > $(DIST)/PKGBUILD
+	cp packaging/kwin-canvas.install $(DIST)/kwin-canvas.install
 	@echo "dist/PKGBUILD written; after the v$(VERSION) tag is on GitHub: cd $(DIST) && updpkgsums && makepkg -si"
 
 release: dist ## Tag v$(VERSION) and publish a GitHub release with the tarballs (needs a clean tree)

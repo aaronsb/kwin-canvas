@@ -69,7 +69,9 @@ root, the same places `kpackagetool6 --global` uses, with no session calls.
 `make pkgbuild` writes `dist/PKGBUILD` for the AUR from
 `packaging/PKGBUILD.in`; once the release tag is on GitHub, `updpkgsums` and
 `makepkg -si` in `dist/` build and install it. Users then enable the effect
-in Desktop Effects or with step 3's D-Bus call.
+in Desktop Effects or with step 3's D-Bus call. KWin keeps the version it
+compiled at login, so an upgrade takes effect at the next login; the package
+says so after installing.
 
 ## First use
 
