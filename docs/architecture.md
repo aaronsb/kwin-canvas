@@ -175,6 +175,26 @@ by the `MouseContextMenu` gesture, the first gesture spec to carry a button.
 Attached properties inside a `Connections` handler resolve against the
 `Connections` object, so the handler reads the screen through the view.
 
+## Snapping
+
+Drags keep unsnapped positions (`dragRaw`, `targetRaw`) and snap the moving
+set's bounding box as one, so a drag can always pull away. Candidates are
+every other window and every desktop's frames. Edges snap per axis, corners
+only when both axes meet the same candidate, the grid rounds left and top to
+`SnapGridSize`; the nearest within `SnapDistance` screen pixels wins. Resize
+grips snap the edge being dragged through `snapEdge1D`. The three toggles
+start from config on each open and live in the toolbar.
+
+## Send to
+
+`sendTo(desktop)` translates each selected window by the difference between
+its current frame's target and the destination's, so it keeps its place on
+screen in the new desktop. `sendTo(null)` parks the set's bounding box at the
+nearest of a few spots around the union of all frames, the origin first.
+Desktop colours come from `palettes[Palette]`; okabe-ito, tol and ibm are
+published colour-blind safe sets, mono is luminance only, and tag text
+picks black or white by luminance.
+
 ## Screen edges
 
 `X-KWin-Border-Activate` in the metadata puts the effect into the Screen

@@ -69,10 +69,11 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | trash on a frame tag | | remove that desktop (never the first) |
 | click a window | | select it; Shift+click adds, Ctrl+click toggles, Shift+drag on the ground selects by rectangle |
 | drag a selected window | | move the whole selection, geometry kept; drop it in a frame and apply to move them all to that desktop |
-| right-click a window | | arrange the selection: horizontally, vertically, tile, grid (rows × columns), cascade |
+| right-click a window | | arrange the selection: horizontally, vertically, tile, grid (rows × columns), cascade; send to a desktop or to the plane |
+| toolbar toggles | | snap to edges, corners, grid while dragging or resizing (grid step and snap distance are settings) |
 | double-click a window | | apply with it on screen, focus it |
-| double-click a frame | | zoom to that desktop |
-| Ctrl+double-click a frame | | apply with that desktop current |
+| double-click a frame | | apply with that desktop current |
+| Ctrl+double-click a frame, or click its swatch in the toolbar | | zoom to that desktop |
 | Shift+double-click a window outside every frame | | new desktop centred on it, window moved there |
 | Enter | | apply and close |
 | Esc | | cancel, nothing moves |
@@ -93,8 +94,8 @@ Everything above is reassignable the KDE way:
   Canvas Home, and the in-canvas actions (Apply, Cancel, Fit, Origin, Zoom In,
   Zoom Out), which have no default chord until you give them one.
 - **Effect settings** are in Desktop Effects → Canvas → configure: the opening
-  view, the keys the open canvas listens for, the three mouse gestures, and the
-  ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
+  view, the keys the open canvas listens for, the mouse gestures, snapping, the
+  desktop colour scheme (including colour-blind safe sets), and the ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
 - **Screen edges** are assigned on the Screen Edges page.
 
 The toolbar inside the canvas sits on the primary display, at any edge or

@@ -87,12 +87,12 @@
             <label>Gesture on a window that applies with it focused: Click or DoubleClick, with optional Shift+, Ctrl+, Alt+, Meta+.</label>
             <default>DoubleClick</default>
         </entry>
-        <entry name="MouseZoomToDesktop" type="String">
-            <label>Gesture on a desktop frame that zooms the camera to that desktop's frames.</label>
-            <default>DoubleClick</default>
-        </entry>
         <entry name="MouseGotoDesktop" type="String">
             <label>Gesture on a desktop frame that applies with that desktop current.</label>
+            <default>DoubleClick</default>
+        </entry>
+        <entry name="MouseZoomToDesktop" type="String">
+            <label>Gesture on a desktop frame that zooms the camera to that desktop's frames (the toolbar swatches do this on a click).</label>
             <default>Ctrl+DoubleClick</default>
         </entry>
         <entry name="MouseSelect" type="String">
@@ -106,6 +106,30 @@
         <entry name="MouseSelectToggle" type="String">
             <label>Gesture on a window that toggles its selection.</label>
             <default>Ctrl+Click</default>
+        </entry>
+        <entry name="Palette" type="String">
+            <label>Colour scheme for desktops: default, okabe-ito (colour-blind safe), tol (colour-blind safe), ibm (colour-blind safe), mono (luminance steps only).</label>
+            <default>okabe-ito</default>
+        </entry>
+        <entry name="SnapEdges" type="Bool">
+            <label>Snap window and frame edges to other windows and frames while dragging.</label>
+            <default>true</default>
+        </entry>
+        <entry name="SnapCorners" type="Bool">
+            <label>Snap corners to other corners while dragging.</label>
+            <default>true</default>
+        </entry>
+        <entry name="SnapGrid" type="Bool">
+            <label>Snap positions to the canvas grid while dragging.</label>
+            <default>false</default>
+        </entry>
+        <entry name="SnapGridSize" type="Int">
+            <label>Grid step in canvas pixels for snap to grid.</label>
+            <default>64</default>
+        </entry>
+        <entry name="SnapDistance" type="Int">
+            <label>Snap when within this many screen pixels.</label>
+            <default>12</default>
         </entry>
         <entry name="MouseContextMenu" type="String">
             <label>Gesture on a window that opens the arrange menu for the selection.</label>

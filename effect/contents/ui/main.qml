@@ -162,7 +162,23 @@ KWin.SceneEffect {
 
     readonly property real zoomMin: configuration.ZoomMin
     readonly property real zoomStep: configuration.ZoomStep
-    readonly property var palette: ["#4fa3ff", "#ff9f43", "#2ecc71", "#e056fd", "#f9ca24", "#ff6b6b", "#48dbfb", "#c8d6e5"]
+    // Desktop colour schemes. The colour-blind safe ones are published sets:
+    // Okabe & Ito (2008), Paul Tol's bright set, IBM's Carbon set. mono
+    // differs by luminance only.
+    readonly property var palettes: ({
+        "default":   ["#4fa3ff", "#ff9f43", "#2ecc71", "#e056fd", "#f9ca24", "#ff6b6b", "#48dbfb", "#c8d6e5"],
+        "okabe-ito": ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9", "#D55E00", "#F0E442", "#999999"],
+        "tol":       ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB"],
+        "ibm":       ["#648FFF", "#FE6100", "#785EF0", "#FFB000", "#DC267F"],
+        "mono":      ["#f2f2f2", "#b8b8b8", "#8a8a8a", "#5e5e5e", "#3a3a3a"]
+    })
+    readonly property var palette: palettes[String(configuration.Palette || "").toLowerCase()] || palettes["default"]
+
+    // Text that reads on a swatch of the given colour.
+    function textOn(c) {
+        const col = Qt.color(c);
+        return (0.299 * col.r + 0.587 * col.g + 0.114 * col.b) > 0.6 ? "#1a1a1a" : "#ffffff";
+    }
 
     // ---- window filter -----------------------------------------------------
     function isCanvasWindow(w, anyDesktop) {
@@ -288,10 +304,16 @@ KWin.SceneEffect {
         return best;
     }
 
+    property var targetRaw: null
     function dragTarget(d, dx, dy) {
         const t = targetOf(d);
-        t.x += dx / zoom;
-        t.y += dy / zoom;
+        if (!targetRaw || targetRaw.id !== d.id) targetRaw = { id: d.id, x: t.x, y: t.y };
+        targetRaw.x += dx / zoom; targetRaw.y += dy / zoom;
+        const vs = KWin.Workspace.virtualScreenGeometry;
+        const box = { x: targetRaw.x + vs.x, y: targetRaw.y + vs.y, width: vs.width, height: vs.height };
+        const s = snapDelta(box, snapCandidates(null, d));
+        t.x = targetRaw.x + s.dx;
+        t.y = targetRaw.y + s.dy;
         revision++;
     }
 
@@ -409,6 +431,11 @@ KWin.SceneEffect {
         entryViewY = viewY;
         zoom = 1.0;
         clearSelection();
+        snapEdges = configuration.SnapEdges;
+        snapCorners = configuration.SnapCorners;
+        snapGrid = configuration.SnapGrid;
+        dragRaw = {};
+        targetRaw = null;
         targets[KWin.Workspace.currentDesktop.id] = { x: viewX, y: viewY };
         ensureTargets();
         entryTargets = copyTargets(targets);
@@ -539,6 +566,95 @@ KWin.SceneEffect {
         commit(entry.window);
     }
 
+    // ---- snapping --------------------------------------------------------------
+    // Toggles start from config each time the canvas opens; the toolbar flips them.
+    property bool snapEdges: true
+    property bool snapCorners: true
+    property bool snapGrid: false
+
+    // Rects other than the moving set: windows and every desktop's frames.
+    function snapCandidates(movingIds, movingDesktop) {
+        const out = [];
+        for (let i = 0; i < entries.length; ++i) {
+            const e = entries[i];
+            if (movingIds && movingIds[e.window.internalId]) continue;
+            out.push({ x: e.x, y: e.y, width: e.width, height: e.height });
+        }
+        const ds = KWin.Workspace.desktops, screens = KWin.Workspace.screens;
+        for (let i = 0; i < ds.length; ++i) {
+            if (movingDesktop && ds[i] === movingDesktop) continue;
+            const t = peekTarget(ds[i]);
+            for (let j = 0; j < screens.length; ++j) {
+                const g = screens[j].geometry;
+                out.push({ x: t.x + g.x, y: t.y + g.y, width: g.width, height: g.height });
+            }
+        }
+        return out;
+    }
+
+    // Offset that snaps `rect` (canvas units): per-axis edge snap, corner snap
+    // when both axes meet the same candidate, grid on left/top. The nearest
+    // within SnapDistance screen pixels wins; 0 when nothing is near.
+    function snapDelta(rect, cands) {
+        const th = configuration.SnapDistance / zoom;
+        let bx = 0, by = 0, bax = th + 1, bay = th + 1;
+        const rx = [rect.x, rect.x + rect.width], ry = [rect.y, rect.y + rect.height];
+        if (snapEdges || snapCorners) {
+            for (let i = 0; i < cands.length; ++i) {
+                const c = cands[i];
+                const cx = [c.x, c.x + c.width], cy = [c.y, c.y + c.height];
+                let ex = 0, ey = 0, eax = th + 1, eay = th + 1;
+                for (let a = 0; a < 2; ++a) for (let b = 0; b < 2; ++b) {
+                    const dx = cx[b] - rx[a], dy = cy[b] - ry[a];
+                    if (Math.abs(dx) < eax) { eax = Math.abs(dx); ex = dx; }
+                    if (Math.abs(dy) < eay) { eay = Math.abs(dy); ey = dy; }
+                }
+                if (snapEdges) {
+                    if (eax < bax) { bax = eax; bx = ex; }
+                    if (eay < bay) { bay = eay; by = ey; }
+                } else if (eax <= th && eay <= th && eax + eay < bax + bay) {
+                    bax = eax; bay = eay; bx = ex; by = ey;
+                }
+            }
+        }
+        if (snapGrid) {
+            const g = Math.max(1, configuration.SnapGridSize);
+            const gx = Math.round(rect.x / g) * g - rect.x, gy = Math.round(rect.y / g) * g - rect.y;
+            if (Math.abs(gx) < bax) { bax = Math.abs(gx); bx = gx; }
+            if (Math.abs(gy) < bay) { bay = Math.abs(gy); by = gy; }
+        }
+        return { dx: bax <= th ? bx : 0, dy: bay <= th ? by : 0 };
+    }
+
+    // Snap one moving edge value (1-D) against candidate edges and the grid.
+    function snapEdge1D(value, horizontal, cands) {
+        const th = configuration.SnapDistance / zoom;
+        let best = 0, ba = th + 1;
+        if (snapEdges || snapCorners) {
+            for (let i = 0; i < cands.length; ++i) {
+                const c = cands[i];
+                const es = horizontal ? [c.x, c.x + c.width] : [c.y, c.y + c.height];
+                for (let k = 0; k < 2; ++k) { const d = es[k] - value; if (Math.abs(d) < ba) { ba = Math.abs(d); best = d; } }
+            }
+        }
+        if (snapGrid) {
+            const g = Math.max(1, configuration.SnapGridSize);
+            const d = Math.round(value / g) * g - value;
+            if (Math.abs(d) < ba) { ba = Math.abs(d); best = d; }
+        }
+        return ba <= th ? best : 0;
+    }
+
+    // Raw, unsnapped positions of the set being dragged, keyed by window id.
+    property var dragRaw: ({})
+    function beginDrag(index) {
+        const e = entries[index];
+        if (!e) return;
+        dragRaw = {};
+        const set = isSelected(e) ? entries.filter(isSelected) : [e];
+        for (let i = 0; i < set.length; ++i) dragRaw[set[i].window.internalId] = { x: set[i].x, y: set[i].y };
+    }
+
     // ---- arrange the selection ----------------------------------------------
     // Entries to arrange: the selection, or the one window the menu was opened on.
     property var contextEntry: null
@@ -595,6 +711,53 @@ KWin.SceneEffect {
         revision++;
     }
 
+    // sendTo(desktop): move the selection so each window keeps its place
+    // within a frame, now in that desktop's frame. sendTo(null): park the
+    // set near the origin at the nearest spot outside every frame.
+    function sendTo(d) {
+        const list = arrangeTargets();
+        if (list.length === 0) return;
+        if (d) {
+            for (let i = 0; i < list.length; ++i) {
+                const e = list[i];
+                const from = desktopAt(e) || e.desktop;
+                const a = peekTarget(from), b = peekTarget(d);
+                e.x += b.x - a.x;
+                e.y += b.y - a.y;
+            }
+        } else {
+            const box = bbox(list);
+            const gap = configuration.ArrangeGap;
+            const frames = snapCandidates(null, null).filter(function (r) { return r.width >= 100; });
+            // Candidate spots: the origin, then just outside the union of all frames on each side.
+            let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+            const ds = KWin.Workspace.desktops, screens = KWin.Workspace.screens;
+            for (let i = 0; i < ds.length; ++i) for (let j = 0; j < screens.length; ++j) {
+                const tg = peekTarget(ds[i]), g = screens[j].geometry;
+                l = Math.min(l, tg.x + g.x); t = Math.min(t, tg.y + g.y);
+                r = Math.max(r, tg.x + g.x + g.width); b = Math.max(b, tg.y + g.y + g.height);
+            }
+            const spots = [{ x: 0, y: 0 }, { x: l - box.width - gap, y: 0 }, { x: 0, y: t - box.height - gap },
+                           { x: r + gap, y: 0 }, { x: 0, y: b + gap }];
+            const clear = function (sx, sy) {
+                for (let i = 0; i < ds.length; ++i) for (let j = 0; j < screens.length; ++j) {
+                    const tg = peekTarget(ds[i]), g = screens[j].geometry;
+                    if (sx < tg.x + g.x + g.width && sx + box.width > tg.x + g.x && sy < tg.y + g.y + g.height && sy + box.height > tg.y + g.y) return false;
+                }
+                return true;
+            };
+            let best = null, bd = Infinity;
+            for (let i = 0; i < spots.length; ++i) {
+                if (!clear(spots[i].x, spots[i].y)) continue;
+                const dist = Math.hypot(spots[i].x, spots[i].y);
+                if (dist < bd) { bd = dist; best = spots[i]; }
+            }
+            if (!best) best = { x: l - box.width - gap, y: t - box.height - gap };
+            for (let i = 0; i < list.length; ++i) { list[i].x += best.x - box.x; list[i].y += best.y - box.y; }
+        }
+        revision++;
+    }
+
     // Dispatch a gesture on a window against the mouse bindings.
     signal contextRequested(var entry)
 
@@ -630,19 +793,22 @@ KWin.SceneEffect {
     // Entries are addressed by index: the Repeater hands delegates a copy of the
     // element, so mutating modelData would never reach the committed table.
     // A selected window drags the whole selection; relative geometry is kept.
+    // Positions accumulate unsnapped in dragRaw, then the set's bounding box
+    // is snapped as one, so a drag can always pull away from a snap.
     function dragEntry(index, dx, dy) {
         const e = entries[index];
         if (!e) return;
-        if (isSelected(e)) {
-            for (let i = 0; i < entries.length; ++i) {
-                if (!isSelected(entries[i])) continue;
-                entries[i].x += dx / zoom;
-                entries[i].y += dy / zoom;
-            }
-        } else {
-            e.x += dx / zoom;
-            e.y += dy / zoom;
+        if (!dragRaw[e.window.internalId]) beginDrag(index);
+        const set = [];
+        for (let i = 0; i < entries.length; ++i) if (dragRaw[entries[i].window.internalId]) set.push(entries[i]);
+        for (let i = 0; i < set.length; ++i) {
+            const r = dragRaw[set[i].window.internalId];
+            r.x += dx / zoom; r.y += dy / zoom;
+            set[i].x = r.x; set[i].y = r.y;
         }
+        const box = bbox(set);
+        const d = snapDelta(box, snapCandidates(dragRaw, null));
+        for (let i = 0; i < set.length; ++i) { set[i].x += d.dx; set[i].y += d.dy; }
         revision++;
     }
 
@@ -652,6 +818,12 @@ KWin.SceneEffect {
     function requestSize(index, w, h, anchorRight, anchorBottom) {
         const e = entries[index];
         if (!e || e.window.deleted) return;
+        // Snap the edge being dragged. Left/top anchors keep the far edge fixed.
+        const ids = {}; ids[e.window.internalId] = true;
+        const cands = snapCandidates(ids, null);
+        const right = e.x + e.width, bottom = e.y + e.height;
+        w += snapEdge1D(anchorRight ? right - w : e.x + w, true, cands) * (anchorRight ? -1 : 1);
+        h += snapEdge1D(anchorBottom ? bottom - h : e.y + h, false, cands) * (anchorBottom ? -1 : 1);
         e.anchorRight = anchorRight;
         e.anchorBottom = anchorBottom;
         const f = e.window.frameGeometry;
@@ -826,7 +998,7 @@ KWin.SceneEffect {
             break;
         }
         case "shift": shiftAll(Number(a[1]), Number(a[2])); break;
-        case "drag": dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
+        case "drag": beginDrag(Number(a[1])); dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
         case "resize": requestSize(Number(a[1]), Number(a[2]), Number(a[3]), false, false); break;
         case "resetview": {
             // 1:1 only: forget the pan history so canvas == frame for this desktop.
@@ -890,6 +1062,13 @@ KWin.SceneEffect {
         case "selecttoggle": selectToggle(entries[Number(a[1])]); break;
         case "clearsel": clearSelection(); break;
         case "arrange": arrange(a[1], Number(a[2]), Number(a[3])); break;
+        case "snap": {
+            const on = a[2] === "on";
+            if (a[1] === "edges") snapEdges = on; else if (a[1] === "corners") snapCorners = on; else if (a[1] === "grid") snapGrid = on;
+            break;
+        }
+        case "begindrag": beginDrag(Number(a[1])); break;
+        case "sendto": sendTo(a[1] === "none" ? null : KWin.Workspace.desktops[Number(a[1])]); break;
         case "marquee": selectInRect(Number(a[1]), Number(a[2]), Number(a[3]), Number(a[4])); break;
         case "state": break;
         default: console.warn("kwin-canvas: unknown debug command", cmd);
@@ -899,7 +1078,8 @@ KWin.SceneEffect {
 
     function logState() {
         const cur = KWin.Workspace.currentDesktop;
-        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") desktop=" + cur.name + " entries=" + entries.length;
+        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") desktop=" + cur.name + " entries=" + entries.length
+            + " snap=" + (snapEdges ? "E" : "-") + (snapCorners ? "C" : "-") + (snapGrid ? "G" : "-");
         const ds = KWin.Workspace.desktops;
         for (let i = 0; i < ds.length; ++i) {
             const t = peekTarget(ds[i]);
@@ -1023,6 +1203,7 @@ KWin.SceneEffect {
         cursor: Qt.SizeAllCursor
         width: tagRow.implicitWidth + 12
         height: tagRow.implicitHeight + 6
+        onDragStarted: effect.targetRaw = null
         onDragged: (dx, dy) => effect.dragTarget(desktop, dx, dy)
 
         Rectangle {
@@ -1038,7 +1219,7 @@ KWin.SceneEffect {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: tag.desktop.name + " \u00b7 " + tag.screen.name + "  " + tag.screen.geometry.width + "x" + tag.screen.geometry.height
-                color: "#ffffff"
+                color: effect.textOn(tag.accent)
                 font.pixelSize: 12
                 font.bold: true
             }
@@ -1236,6 +1417,7 @@ KWin.SceneEffect {
                             y: index === 3 ? frame.height - band : 0
                             width: (index === 0 || index === 2) ? frame.width : band
                             height: (index === 1 || index === 3) ? frame.height : band
+                            onDragStarted: effect.targetRaw = null
                             onDragged: (dx, dy) => effect.dragTarget(desktopFrames.desktop, dx, dy)
                         }
                     }
@@ -1297,6 +1479,7 @@ KWin.SceneEffect {
                     anchors.fill: parent
                     viewItem: view
                     tappable: true
+                    onDragStarted: effect.beginDrag(thumb.index)
                     onDragged: (dx, dy) => effect.dragEntry(thumb.index, dx, dy)
                     onTapped: (count, modifiers, button) => effect.windowGesture(thumb.entry, count, modifiers, button)
                 }
@@ -1443,6 +1626,23 @@ KWin.SceneEffect {
             }
             PC3.MenuItem { text: "Cascade";              icon.name: "window-duplicate";      onTriggered: effect.arrange("cascade") }
             PC3.MenuSeparator {}
+            PC3.Menu {
+                title: "Send to"
+                icon.name: "virtual-desktops"
+                Repeater {
+                    model: KWin.Workspace.desktops
+                    delegate: PC3.MenuItem {
+                        required property var modelData
+                        required property int index
+                        text: modelData.name
+                        onTriggered: effect.sendTo(modelData)
+                        Rectangle { anchors.verticalCenter: parent.verticalCenter; anchors.right: parent.right; anchors.rightMargin: Kirigami.Units.smallSpacing; width: 12; height: 12; radius: 3; color: effect.palette[index % effect.palette.length] }
+                    }
+                }
+                PC3.MenuSeparator {}
+                PC3.MenuItem { text: "Plane, outside every desktop"; icon.name: "edit-none"; onTriggered: effect.sendTo(null) }
+            }
+            PC3.MenuSeparator {}
             PC3.MenuItem { text: "Clear selection";      icon.name: "edit-select-none";      onTriggered: effect.clearSelection() }
         }
 
@@ -1547,6 +1747,10 @@ KWin.SceneEffect {
                 PC3.ToolButton { icon.name: "go-home";         text: "Home";   display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Look through this desktop's frames (" + effect.keyLabel(effect.configuration.KeyHome) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.home() }
                 PC3.ToolButton { icon.name: "zoom-in";         text: "In";     display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom in (" + effect.keyLabel(effect.configuration.KeyZoomIn) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom * effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
                 PC3.ToolButton { icon.name: "zoom-out";        text: "Out";    display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom out (" + effect.keyLabel(effect.configuration.KeyZoomOut) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom / effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
+                Sep {}
+                PC3.ToolButton { icon.name: "snap-bounding-box-edges";   text: "Edges";   display: PC3.AbstractButton.IconOnly; checkable: true; checked: effect.snapEdges;   onToggled: effect.snapEdges = checked;   PC3.ToolTip.text: "Snap to edges";   PC3.ToolTip.visible: hovered }
+                PC3.ToolButton { icon.name: "snap-bounding-box-corners"; text: "Corners"; display: PC3.AbstractButton.IconOnly; checkable: true; checked: effect.snapCorners; onToggled: effect.snapCorners = checked; PC3.ToolTip.text: "Snap to corners"; PC3.ToolTip.visible: hovered }
+                PC3.ToolButton { icon.name: "snap-grid";                 text: "Grid";    display: PC3.AbstractButton.IconOnly; checkable: true; checked: effect.snapGrid;    onToggled: effect.snapGrid = checked;    PC3.ToolTip.text: "Snap to grid (" + effect.configuration.SnapGridSize + " px)"; PC3.ToolTip.visible: hovered }
                 Sep {}
                 PC3.ToolButton { icon.name: "dialog-ok-apply"; text: "Apply";  display: hud.vertical || hud.square ? PC3.AbstractButton.IconOnly : PC3.AbstractButton.TextBesideIcon; PC3.ToolTip.text: "Apply and close (" + effect.keyLabel(effect.configuration.KeyApply) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.commit(null) }
                 PC3.ToolButton { icon.name: "dialog-cancel";   text: "Cancel"; display: hud.vertical || hud.square ? PC3.AbstractButton.IconOnly : PC3.AbstractButton.TextBesideIcon; PC3.ToolTip.text: "Close without changes (" + effect.keyLabel(effect.configuration.KeyCancel) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.cancel() }

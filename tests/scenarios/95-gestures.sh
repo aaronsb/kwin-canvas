@@ -32,21 +32,24 @@ run_scenario() {
     assert_eq "Gwenview moved to the new desktop" "$(eget Gwenview desktop)" "$(tget 2 name)"
     assert_eq "new desktop is current" "$(sget desktop)" "$(tget 2 name)"
 
-    # Double-click desktop 1's frame area: the camera zooms to that desktop, canvas stays open.
+    # Double-click desktop 1's frame area: apply with that desktop current.
     open_1to1
     c extents
     local tx ty; tx=$(tget 0 x); ty=$(tget 0 y)
     read -r sx sy <<<"$(screen_of $((tx + 1900)) $((ty + 1060)))"
     dblclick "$sx" "$sy"
     sleep 0.6; c state
-    assert_eq "frame double-click keeps the canvas open" "$(sget visible)" true
-    assert_near "camera fitted to the frame" "$(sget zoom)" 0.8889 0.01
-    # Ctrl+double-click: apply with that desktop current.
+    assert_eq "frame double-click applied" "$(sget visible)" false
+    assert_eq "desktop 1 is current" "$(sget desktop)" "$(tget 0 name)"
+    # Ctrl+double-click: the camera zooms to that desktop, canvas stays open.
+    open_1to1
+    c extents
     read -r sx sy <<<"$(screen_of $((tx + 1900)) $((ty + 1060)))"
     printf "move $sx $sy\nkey ctrl down\nclick\nsleep 60\nclick\nkey ctrl up\n" | input
     sleep 0.6; c state
-    assert_eq "ctrl double-click applied" "$(sget visible)" false
-    assert_eq "desktop 1 is current" "$(sget desktop)" "$(tget 0 name)"
+    assert_eq "ctrl double-click keeps the canvas open" "$(sget visible)" true
+    assert_near "camera fitted to the frame" "$(sget zoom)" 0.8889 0.01
+    c cancel
 
     # Restore: Gwenview back, extra desktop gone.
     open_1to1
