@@ -73,17 +73,17 @@ sx=$(awk -v x="$kx" -v v="$vx" -v z="$z" 'BEGIN{printf "%d", (x+240-v)*z}')
 sy=$(awk -v y="$ky" -v v="$vy" -v z="$z" 'BEGIN{printf "%d", (y+210-v)*z}')
 printf "glide $sx $sy 40 12\ndrag $sx $sy $((sx + 500)) $((sy + 120)) 40 15\n" | input; sleep 0.4
 still 04-window-moved
-say "add a desktop and drag its frames"
-c "adddesktop 0" >/dev/null; sleep 0.5
+say "add an activity and drag its frames"
+c addactivity >/dev/null; sleep 1.2
 c extents >/dev/null; sleep 0.4
-still 05-two-desktops
+still 05-three-activities
 say "apply"
 input key enter; sleep 1.0
 still 06-applied
-say "switch to the new desktop and back"
-c "desktop 1" >/dev/null; sleep 0.8
-c "desktop 0" >/dev/null; sleep 0.8
+say "switch to the new activity and back"
+c "activity 2" >/dev/null; sleep 1.0
+c "activity 0" >/dev/null; sleep 1.0
 capture_stop
-c open >/dev/null; c "rmdesktop 1" >/dev/null; c cancel >/dev/null
+c open >/dev/null; c "rmactivity 2" >/dev/null; sleep 1.0; c cancel >/dev/null
 echo "frames: $(ls "$FRAMES" | wc -l) in $FRAMES"
 video

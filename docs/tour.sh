@@ -31,8 +31,8 @@ arrange >/dev/null
 # 1. The desktop at 1:1: nothing running, an ordinary Plasma desktop.
 scene 01-desktop
 
-# 2. Hero: open, zoomed to fit, two desktops with their frames, one window
-#    living in desktop 2, one floating on the plane outside every frame.
+# 2. Hero: open, zoomed to fit, two activities with their frames, one window
+#    living in Activity 2, one floating on the plane outside every frame.
 open_1to1
 c "placeby Gwenview 2500 200"
 c "placeby KCalc 2300 1500"
@@ -57,24 +57,24 @@ scene 05-resize
 c "resize $local_i 700 520"
 sleep 0.6
 
-# 6. A third desktop, its frames placed on the plane, a window dragged into it.
-c "adddesktop 1"
-sleep 0.5
+# 6. A third activity, its frames placed on the plane, a window dragged into it.
+c addactivity
+sleep 1.2
 c state
 tx=$(tget 2 x); ty=$(tget 2 y)
 c "placeby Dolphin $((tx + 300)) $((ty + 200))"
 c extents
-scene 06-three-desktops
+scene 06-three-activities
 
-# 7. Apply, then switch to desktop 2 at 1:1: Gwenview is what that desktop shows.
+# 7. Apply, then switch to Activity 2 at 1:1: Gwenview is what that activity shows.
 c commit
-c "desktop 1"
-sleep 0.8
-scene 07-desktop-2
+c "activity 1"
+sleep 1.0
+scene 07-activity-2
 
-# 8. Back on desktop 1, the plane panned: the toolbar in a corner, square.
-c "desktop 0"
-sleep 0.5
+# 8. Back on Activity 1, the plane panned: the toolbar in a corner, square.
+c "activity 0"
+sleep 1.0
 kwriteconfig6 --file "$CONF/kwinrc" --group Effect-kwin-canvas --key HudPosition BottomRight
 nq org.kde.KWin /Effects org.kde.kwin.Effects.reconfigureEffect kwin-canvas
 sleep 0.3

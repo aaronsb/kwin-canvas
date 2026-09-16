@@ -26,7 +26,7 @@ c() {
     LAST_STATE=$(cmd "$1")
 }
 
-# sget zoom|viewx|viewy|visible|desktop|entries  -> value from the last state line
+# sget zoom|viewx|viewy|visible|activity|entries|nactivities  -> value from the last state line
 sget() {
     local line; line=$(head -1 <<<"$LAST_STATE")
     case $1 in
@@ -34,13 +34,13 @@ sget() {
         viewx)   sed -n 's/.*view=(\([-0-9.]*\),.*/\1/p' <<<"$line" ;;
         viewy)   sed -n 's/.*view=([-0-9.]*,\([-0-9.]*\)).*/\1/p' <<<"$line" ;;
         visible) sed -n 's/.*visible=\([a-z]*\).*/\1/p' <<<"$line" ;;
-        desktop) sed -n 's/.*desktop=\(.*\) entries=.*/\1/p' <<<"$line" ;;
+        activity) sed -n 's/.*activity=\(.*\) entries=.*/\1/p' <<<"$line" ;;
         entries) sed -n 's/.*entries=\([0-9]*\).*/\1/p' <<<"$line" ;;
-        ndesktops) grep -c '^  {' <<<"$LAST_STATE" ;;
+        nactivities) grep -c '^  {' <<<"$LAST_STATE" ;;
     esac
 }
 
-# eget CAPTION_SUBSTR x|y|w|h|fx|fy|desktop|index  -> field of the matching entry
+# eget CAPTION_SUBSTR x|y|w|h|fx|fy|activity|index  -> field of the matching entry
 eget() {
     local line; line=$(grep -a "^  \[[0-9]*\] .*$1" <<<"$LAST_STATE" | head -1)
     [ -n "$line" ] || { echo ""; return; }
@@ -52,17 +52,18 @@ eget() {
         h)       sed -n 's/.*canvas=([-0-9.]*,[-0-9.]* [0-9.]*x\([0-9.]*\)).*/\1/p' <<<"$line" ;;
         fx)      sed -n 's/.*frame=(\([-0-9.]*\),.*/\1/p' <<<"$line" ;;
         fy)      sed -n 's/.*frame=([-0-9.]*,\([-0-9.]*\)).*/\1/p' <<<"$line" ;;
-        desktop) sed -n 's/.*desktop=\(.*\)$/\1/p' <<<"$line" ;;
+        activity) sed -n 's/.*activity=\(.*\)$/\1/p' <<<"$line" ;;
     esac
 }
 
-# tget INDEX x|y  -> a desktop target from the last state block
+# tget INDEX x|y|name|hidden  -> an activity target from the last state block
 tget() {
     local line; line=$(grep -a "^  {$1}" <<<"$LAST_STATE" | head -1)
     case $2 in
         x) sed -n 's/.*target=(\([-0-9.]*\),.*/\1/p' <<<"$line" ;;
         y) sed -n 's/.*target=([-0-9.]*,\([-0-9.]*\)).*/\1/p' <<<"$line" ;;
         name) sed -n 's/^  {[0-9]*} \(.*\) target=.*/\1/p' <<<"$line" ;;
+        hidden) sed -n 's/.*hidden=\(.*\)$/\1/p' <<<"$line" ;;
     esac
 }
 
@@ -111,12 +112,12 @@ snap() {
     fi
 }
 
-# Open and put the camera at 1:1 on the current desktop's frames, whatever OpenZoom is.
+# Open and put the camera at 1:1 on the current activity's frames, whatever OpenZoom is.
 open_1to1() { c open; c home; }
 
 # ---- fixture layout ---------------------------------------------------------
 # A fixed arrangement of the fixture windows in canvas units. Everything
-# assumes the current desktop's target is (0,0), which resetview guarantees.
+# assumes the current activity's target is (0,0), which resetview guarantees.
 declare -A LAYOUT=(
     [KCalc]="100 120 480 420"
     [sample.txt]="640 120 700 520"

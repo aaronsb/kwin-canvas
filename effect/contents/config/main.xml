@@ -63,7 +63,7 @@
             <default>Escape</default>
         </entry>
         <entry name="KeyHome" type="String">
-            <label>Look through the current desktop's frames.</label>
+            <label>Look through the current activity's frames.</label>
             <default>Home</default>
         </entry>
         <entry name="KeyOrigin" type="String">
@@ -87,12 +87,12 @@
             <label>Gesture on a window that applies with it focused: Click or DoubleClick, with optional Shift+, Ctrl+, Alt+, Meta+.</label>
             <default>DoubleClick</default>
         </entry>
-        <entry name="MouseGotoDesktop" type="String">
-            <label>Gesture on a desktop frame that applies with that desktop current.</label>
+        <entry name="MouseGotoActivity" type="String">
+            <label>Gesture on an activity frame that applies with that activity current.</label>
             <default>DoubleClick</default>
         </entry>
-        <entry name="MouseZoomToDesktop" type="String">
-            <label>Gesture on a desktop frame that zooms the camera to that desktop's frames (the toolbar swatches do this on a click).</label>
+        <entry name="MouseZoomToActivity" type="String">
+            <label>Gesture on an activity frame that zooms the camera to that activity's frames (the toolbar swatches do this on a click).</label>
             <default>Ctrl+DoubleClick</default>
         </entry>
         <entry name="MouseSelect" type="String">
@@ -108,7 +108,7 @@
             <default>Ctrl+Click</default>
         </entry>
         <entry name="Palette" type="String">
-            <label>Colour scheme for desktops: default, okabe-ito (colour-blind safe), tol (colour-blind safe), ibm (colour-blind safe), mono (luminance steps only).</label>
+            <label>Colour scheme for activities: default, okabe-ito (colour-blind safe), tol (colour-blind safe), ibm (colour-blind safe), mono (luminance steps only).</label>
             <default>okabe-ito</default>
         </entry>
         <entry name="SnapEdges" type="Bool">
@@ -139,8 +139,8 @@
             <label>Gap in canvas pixels between arranged windows.</label>
             <default>16</default>
         </entry>
-        <entry name="MouseNewDesktopAt" type="String">
-            <label>Gesture on a window outside every frame that creates a desktop centred on it.</label>
+        <entry name="MouseNewActivityAt" type="String">
+            <label>Gesture on a window outside every frame that creates an activity centred on it.</label>
             <default>Shift+DoubleClick</default>
         </entry>
         <entry name="ToggleShortcut" type="String">
@@ -151,9 +151,13 @@
             <label>Key sequence that returns to the canvas origin.</label>
             <default>Meta+Ctrl+Space</default>
         </entry>
-        <entry name="DesktopGap" type="Int">
-            <label>Gap in canvas pixels between the frame groups of neighbouring virtual desktops when first laid out.</label>
+        <entry name="ActivityGap" type="Int">
+            <label>Gap in canvas pixels between the frame groups of neighbouring activities when first laid out.</label>
             <default>240</default>
+        </entry>
+        <entry name="HiddenFrames" type="StringList">
+            <label>Frames switched off from their tag, as "activityId|outputName". A hidden frame is not drawn and takes no windows.</label>
+            <default></default>
         </entry>
         <entry name="FollowActivation" type="Bool">
             <label>Pan the canvas so an activated off-screen window comes on screen.</label>

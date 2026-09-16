@@ -9,10 +9,11 @@
     ordinary positions, some of them off-screen. The screen is a 1:1 viewport
     onto one shared plane.
 
-    Every virtual desktop is a viewport onto that same plane: a rigid group of
+    Every activity is a viewport onto that same plane: a rigid group of
     monitor frames, one per output in the layout KDE knows, placed somewhere on
-    the canvas. Switching desktops is switching viewport. Dragging a window
-    into another desktop's frame moves it to that desktop.
+    the canvas. Switching activities is switching viewport. Dragging a window
+    into another activity's frame moves it to that activity. Virtual desktops
+    stay ordinary KWin desktops; the canvas shows the current one.
 
     Opening the canvas snapshots every window into canvas coordinates and shows
     them as live thumbnails on a ground grid, with the frames drawn over them.
@@ -23,14 +24,14 @@
       canvas   the plane windows live on; unbounded
       global   KWin's coordinate space across all outputs
       view     (viewX, viewY) is the canvas point the camera puts at global (0,0)
-      target   per desktop: the canvas point at global (0,0) when that desktop
-               is shown. Its frames are drawn at target + output.geometry.
+      target   per activity: the canvas point at global (0,0) when that
+               activity is shown. Its frames are drawn at target + output.geometry.
 
       global = (canvas - view) * zoom
       canvas = view + global / zoom
-      frame geometry = canvas - target(desktop of the window)
+      frame geometry = canvas - target(activity of the window)
 
-    While the canvas is closed, view == target(current desktop).
+    While the canvas is closed, view == target(current activity).
 */
 import QtQuick
 import QtQuick.Layouts
@@ -49,12 +50,12 @@ KWin.SceneEffect {
     property real entryViewX: 0
     property real entryViewY: 0
 
-    // ---- targets: desktop id -> {x, y} -------------------------------------
+    // ---- targets: activity id -> {x, y} ------------------------------------
     property var targets: ({})
     property var entryTargets: ({})
 
     // ---- model -------------------------------------------------------------
-    // Each entry: { window, desktop, x, y, width, height } in canvas units, bottom to top.
+    // Each entry: { window, activity, x, y, width, height } in canvas units, bottom to top.
     property var entries: []
     property int revision: 0
     property bool helpOpen: false
@@ -80,7 +81,7 @@ KWin.SceneEffect {
         }
         selectionRev++;
     }
-    function desktopColor(d) { return palette[desktopIndex(d) % palette.length]; }
+    function activityColor(id) { return palette[activityIndex(id) % palette.length]; }
     property int lastDebugSeq: 0
 
     // ---- key bindings, from config ------------------------------------------
@@ -162,7 +163,7 @@ KWin.SceneEffect {
 
     readonly property real zoomMin: configuration.ZoomMin
     readonly property real zoomStep: configuration.ZoomStep
-    // Desktop colour schemes. The colour-blind safe ones are published sets:
+    // Activity colour schemes. The colour-blind safe ones are published sets:
     // Okabe & Ito (2008), Paul Tol's bright set, IBM's Carbon set. mono
     // differs by luminance only.
     readonly property var palettes: ({
@@ -181,102 +182,240 @@ KWin.SceneEffect {
     }
 
     // ---- window filter -----------------------------------------------------
-    function isCanvasWindow(w, anyDesktop) {
+    // Windows of the current virtual desktop. anyActivity takes every
+    // activity's windows (the canvas); otherwise the current activity's (1:1).
+    function isCanvasWindow(w, anyActivity) {
         if (!w || w.deleted || !w.managed) return false;
         if (w.desktopWindow || w.dock || w.popupWindow || w.specialWindow) return false;
         if (w.minimized || w.hidden) return false;
-        if (!anyDesktop && !w.onAllDesktops) {
+        if (!w.onAllDesktops) {
             const cur = KWin.Workspace.currentDesktop;
             const ds = w.desktops;
             let on = false;
             for (let i = 0; i < ds.length; ++i) if (ds[i] === cur) on = true;
             if (!on) return false;
         }
+        if (!anyActivity && !onActivity(w, currentActivity)) return false;
         return true;
     }
 
-    // ---- desktops and targets ----------------------------------------------
-    function desktopOf(w) {
-        if (w.onAllDesktops || w.desktops.length === 0) return KWin.Workspace.currentDesktop;
-        return w.desktops[0];
+    // ---- activities and targets --------------------------------------------
+    // KWin hands out activity ids only. With activities disabled the list is
+    // empty and the current id is "", so one unnamed activity stands in.
+    // The list is read explicitly: KWin announces single additions and
+    // removals, and the bulk load from the activity manager after startup
+    // arrives with no signal at all.
+    property var activityIds: [""]
+    readonly property string currentActivity: KWin.Workspace.currentActivity || ""
+    function refreshActivities() {
+        const a = KWin.Workspace.activities;
+        const list = a && a.length > 0 ? Array.prototype.slice.call(a) : [""];
+        if (list.join("\n") === activityIds.join("\n")) return false;
+        activityIds = list;
+        return true;
     }
 
-    function targetOf(d) {
-        let t = targets[d.id];
+    // Names come from the activity manager over D-Bus, one call per id,
+    // refreshed on every open and whenever the list changes: bumping
+    // namesReq re-instantiates the callers, and each calls once on creation.
+    property var activityNames: ({})
+    property int namesRev: 0
+    property int namesReq: 0
+    function refreshNames() { namesReq++; }
+    function setActivityName(id, name) {
+        if (activityNames[id] === name) return;
+        activityNames[id] = name;
+        namesRev++;
+    }
+    function labelOf(id) {
+        namesRev;
+        const n = activityNames[id];
+        if (n) return n;
+        return id ? "Activity " + (activityIndex(id) + 1) : "Activity";
+    }
+
+    Instantiator {
+        model: { effect.namesReq; return effect.activityIds; }
+        delegate: KWin.DBusCall {
+            required property string modelData
+            service: "org.kde.ActivityManager"
+            path: "/ActivityManager/Activities"
+            dbusInterface: "org.kde.ActivityManager.Activities"
+            method: "ActivityName"
+            arguments: [modelData]
+            onFinished: (ret) => effect.setActivityName(modelData, String(ret[0]))
+            Component.onCompleted: call()
+        }
+    }
+
+    KWin.DBusCall {
+        id: addActivityCall
+        service: "org.kde.ActivityManager"
+        path: "/ActivityManager/Activities"
+        dbusInterface: "org.kde.ActivityManager.Activities"
+        method: "AddActivity"
+        onFinished: (ret) => effect.activityAdded(String(ret[0]))
+    }
+    KWin.DBusCall {
+        id: removeActivityCall
+        service: "org.kde.ActivityManager"
+        path: "/ActivityManager/Activities"
+        dbusInterface: "org.kde.ActivityManager.Activities"
+        method: "RemoveActivity"
+    }
+
+    function onActivity(w, id) {
+        const a = w.activities;
+        if (!a || a.length === 0) return true;
+        for (let i = 0; i < a.length; ++i) if (a[i] === id) return true;
+        return false;
+    }
+
+    // The activity a window belongs to: the current one when it is there or
+    // on every activity, else its first.
+    function activityOf(w) {
+        const a = w.activities;
+        if (!a || a.length === 0 || onActivity(w, currentActivity)) return currentActivity;
+        return a[0];
+    }
+
+    function targetOf(id) {
+        let t = targets[id];
         if (!t) {
             t = { x: viewX, y: viewY };
-            targets[d.id] = t;
+            targets[id] = t;
         }
         return t;
     }
 
     // Read-only lookup for bindings, so drawing a frame never fixes a
-    // target before ensureTargets() has laid the desktop out.
-    function peekTarget(d) {
-        const t = targets[d.id];
+    // target before ensureTargets() has laid the activity out.
+    function peekTarget(id) {
+        const t = targets[id];
         return t ? t : { x: viewX, y: viewY };
     }
 
-    function desktopIndex(d) {
-        const ds = KWin.Workspace.desktops;
-        for (let i = 0; i < ds.length; ++i) if (ds[i] === d) return i;
+    function activityIndex(id) {
+        const ids = activityIds;
+        for (let i = 0; i < ids.length; ++i) if (ids[i] === id) return i;
         return 0;
     }
 
-    // The current desktop's target is the camera. Desktops never placed get laid
-    // out in a row beside it, which moves nothing: their windows' canvas
+    // ---- hidden frames -----------------------------------------------------
+    // An activity used on one monitor need not carry frames for the others.
+    // Keys are "activityId|outputName"; the set lives in HiddenFrames.
+    property var hiddenFrames: ({})
+    property int hiddenRev: 0
+    function frameKey(id, screen) { return id + "|" + screen.name; }
+    function isHidden(id, screen) { hiddenRev; return hiddenFrames[frameKey(id, screen)] === true; }
+    function setHidden(id, screen, on) {
+        const k = frameKey(id, screen);
+        if (on) hiddenFrames[k] = true; else delete hiddenFrames[k];
+        hiddenRev++;
+        const list = [];
+        for (const key in hiddenFrames) list.push(key);
+        configuration.HiddenFrames = list;
+        configuration.writeConfig();
+        revision++;
+    }
+    function loadHiddenFrames() {
+        const list = configuration.HiddenFrames || [];
+        const set = {};
+        for (let i = 0; i < list.length; ++i) if (list[i]) set[list[i]] = true;
+        hiddenFrames = set;
+        hiddenRev++;
+    }
+    // Every frame drawn: { id, screen, x, y, width, height } in canvas units.
+    function frames() {
+        const out = [];
+        const ids = activityIds, screens = KWin.Workspace.screens;
+        for (let i = 0; i < ids.length; ++i) {
+            const t = peekTarget(ids[i]);
+            for (let j = 0; j < screens.length; ++j) {
+                if (isHidden(ids[i], screens[j])) continue;
+                const g = screens[j].geometry;
+                out.push({ id: ids[i], screen: screens[j], x: t.x + g.x, y: t.y + g.y, width: g.width, height: g.height });
+            }
+        }
+        return out;
+    }
+
+    // The current activity's target is the camera. Activities never placed get
+    // laid out in a row beside it, which moves nothing: their windows' canvas
     // positions are derived from the target.
     function ensureTargets() {
-        const ds = KWin.Workspace.desktops;
-        const cur = KWin.Workspace.currentDesktop;
-        const ci = desktopIndex(cur);
+        const ids = activityIds;
+        const cur = currentActivity;
+        const ci = activityIndex(cur);
         const base = targetOf(cur);
         const vs = KWin.Workspace.virtualScreenGeometry;
-        const step = vs.width + configuration.DesktopGap;
+        const step = vs.width + configuration.ActivityGap;
         // Rightmost placed target, so later additions never overlap.
         let right = -Infinity;
-        for (let i = 0; i < ds.length; ++i) {
-            const t = targets[ds[i].id];
+        for (let i = 0; i < ids.length; ++i) {
+            const t = targets[ids[i]];
             if (t) right = Math.max(right, t.x);
         }
-        for (let i = 0; i < ds.length; ++i) {
-            if (targets[ds[i].id]) continue;
+        for (let i = 0; i < ids.length; ++i) {
+            if (targets[ids[i]]) continue;
             const x = right === -Infinity ? base.x + (i - ci) * step : right + step;
-            targets[ds[i].id] = { x: x, y: base.y };
+            targets[ids[i]] = { x: x, y: base.y };
             right = Math.max(right, x);
         }
     }
 
-    // A desktop was added or removed. KWin re-homes the windows of a removed
-    // desktop; their geometry is unchanged, so they sit at the same screen
-    // spot in the new desktop's viewport.
-    function desktopsChanged() {
+    // An activity was added or removed. KWin re-homes the windows of a removed
+    // activity; their geometry is unchanged, so they sit at the same screen
+    // spot in their new activity's viewport.
+    function activitiesChanged() {
+        refreshActivities();
         ensureTargets();
+        refreshNames();
         if (!visible) return;
-        const ds = KWin.Workspace.desktops;
+        const ids = activityIds;
         for (let i = 0; i < entries.length; ++i) {
             const e = entries[i];
             if (e.window.deleted) continue;
-            let alive = false;
-            for (let j = 0; j < ds.length; ++j) if (ds[j] === e.desktop) alive = true;
-            const d = desktopOf(e.window);
-            if (alive && d === e.desktop) continue;
-            const t = targetOf(d);
-            e.desktop = d;
+            const alive = ids.indexOf(e.activity) !== -1;
+            const a = activityOf(e.window);
+            if (alive && a === e.activity) continue;
+            const t = targetOf(a);
+            e.activity = a;
             e.x = e.frameX + t.x;
             e.y = e.frameY + t.y;
         }
         revision++;
     }
 
-    function addDesktopAfter(d) {
-        const n = KWin.Workspace.desktops.length;
-        KWin.Workspace.createDesktop(desktopIndex(d) + 1, "Desktop " + (n + 1));
+    // addActivity: a new activity named after its count; the manager answers
+    // with the id, and the Workspace list follows. newActivityAt() parks the
+    // window it should be centred on until then.
+    property var pendingNewAt: null
+    function addActivity() {
+        addActivityCall.arguments = ["Activity " + (activityIds.length + 1)];
+        addActivityCall.call();
     }
 
-    function removeDesktop(d) {
-        if (desktopIndex(d) === 0) return;
-        KWin.Workspace.removeDesktop(d);
+    function activityAdded(id) {
+        if (!id) return;
+        const entry = pendingNewAt;
+        pendingNewAt = null;
+        if (!entry) return;
+        const g = KWin.Workspace.activeScreen.geometry;
+        targets[id] = { x: entry.x + entry.width / 2 - (g.x + g.width / 2),
+                        y: entry.y + entry.height / 2 - (g.y + g.height / 2) };
+        if (!entry.window.deleted) entry.window.activities = [id];
+        entry.activity = id;
+        revision++;
+        // Activating a window on another activity does not switch to it.
+        KWin.Workspace.currentActivity = id;
+        commit(entry.window);
+    }
+
+    function removeActivity(id) {
+        if (activityIds.length <= 1 || !id) return;
+        removeActivityCall.arguments = [id];
+        removeActivityCall.call();
     }
 
     function copyTargets(src) {
@@ -285,43 +424,39 @@ KWin.SceneEffect {
         return out;
     }
 
-    // The desktop whose frames overlap a canvas rect the most, or null if none
+    // The activity whose frames overlap a canvas rect the most, or null if none
     // touches it. A window straddling two frames goes to the larger share.
-    function desktopAt(rect) {
-        const ds = KWin.Workspace.desktops;
-        const screens = KWin.Workspace.screens;
+    function activityAt(rect) {
+        const fs = frames();
         let best = null, bestArea = 0;
-        for (let i = 0; i < ds.length; ++i) {
-            const t = peekTarget(ds[i]);
-            for (let j = 0; j < screens.length; ++j) {
-                const g = screens[j].geometry;
-                const w = Math.min(rect.x + rect.width, t.x + g.x + g.width) - Math.max(rect.x, t.x + g.x);
-                const h = Math.min(rect.y + rect.height, t.y + g.y + g.height) - Math.max(rect.y, t.y + g.y);
-                if (w <= 0 || h <= 0) continue;
-                if (w * h > bestArea) { bestArea = w * h; best = ds[i]; }
-            }
+        for (let i = 0; i < fs.length; ++i) {
+            const f = fs[i];
+            const w = Math.min(rect.x + rect.width, f.x + f.width) - Math.max(rect.x, f.x);
+            const h = Math.min(rect.y + rect.height, f.y + f.height) - Math.max(rect.y, f.y);
+            if (w <= 0 || h <= 0) continue;
+            if (w * h > bestArea) { bestArea = w * h; best = f.id; }
         }
         return best;
     }
 
     property var targetRaw: null
-    function dragTarget(d, dx, dy) {
-        const t = targetOf(d);
-        if (!targetRaw || targetRaw.id !== d.id) targetRaw = { id: d.id, x: t.x, y: t.y };
+    function dragTarget(id, dx, dy) {
+        const t = targetOf(id);
+        if (!targetRaw || targetRaw.id !== id) targetRaw = { id: id, x: t.x, y: t.y };
         targetRaw.x += dx / zoom; targetRaw.y += dy / zoom;
         const vs = KWin.Workspace.virtualScreenGeometry;
         const box = { x: targetRaw.x + vs.x, y: targetRaw.y + vs.y, width: vs.width, height: vs.height };
-        const s = snapDelta(box, snapCandidates(null, d));
+        const s = snapDelta(box, snapCandidates(null, id));
         t.x = targetRaw.x + s.dx;
         t.y = targetRaw.y + s.dy;
         revision++;
     }
 
     function makeEntry(w) {
-        const d = desktopOf(w);
-        const t = targetOf(d);
+        const a = activityOf(w);
+        const t = targetOf(a);
         const g = w.frameGeometry;
-        return { window: w, desktop: d, x: g.x + t.x, y: g.y + t.y, width: g.width, height: g.height,
+        return { window: w, activity: a, x: g.x + t.x, y: g.y + t.y, width: g.width, height: g.height,
                  frameX: g.x, frameY: g.y, anchorRight: false, anchorBottom: false };
     }
 
@@ -387,9 +522,9 @@ KWin.SceneEffect {
         viewY -= dy / zoom;
     }
 
-    // Look through the current desktop's frames.
+    // Look through the current activity's frames.
     function home() {
-        const t = targetOf(KWin.Workspace.currentDesktop);
+        const t = targetOf(currentActivity);
         viewX = t.x;
         viewY = t.y;
         zoom = 1.0;
@@ -409,13 +544,13 @@ KWin.SceneEffect {
             l = Math.min(l, e.x); t = Math.min(t, e.y);
             r = Math.max(r, e.x + e.width); b = Math.max(b, e.y + e.height);
         }
-        const vs = KWin.Workspace.virtualScreenGeometry;
-        const ds = KWin.Workspace.desktops;
-        for (let i = 0; i < ds.length; ++i) {
-            const tg = peekTarget(ds[i]);
-            l = Math.min(l, tg.x + vs.x); t = Math.min(t, tg.y + vs.y);
-            r = Math.max(r, tg.x + vs.x + vs.width); b = Math.max(b, tg.y + vs.y + vs.height);
+        const fs = frames();
+        for (let i = 0; i < fs.length; ++i) {
+            const f = fs[i];
+            l = Math.min(l, f.x); t = Math.min(t, f.y);
+            r = Math.max(r, f.x + f.width); b = Math.max(b, f.y + f.height);
         }
+        if (l === Infinity) { l = 0; t = 0; r = 1; b = 1; }
         const sg = KWin.Workspace.activeScreen.geometry;
         const pad = 80;
         const z = Math.max(zoomMin, Math.min(1.0, Math.min((sg.width - 2 * pad) / (r - l), (sg.height - 2 * pad) / (b - t))));
@@ -436,7 +571,11 @@ KWin.SceneEffect {
         snapGrid = configuration.SnapGrid;
         dragRaw = {};
         targetRaw = null;
-        targets[KWin.Workspace.currentDesktop.id] = { x: viewX, y: viewY };
+        pendingNewAt = null;
+        loadHiddenFrames();
+        refreshActivities();
+        refreshNames();
+        targets[currentActivity] = { x: viewX, y: viewY };
         ensureTargets();
         entryTargets = copyTargets(targets);
         snapshot();
@@ -456,8 +595,8 @@ KWin.SceneEffect {
     }
 
     // Write every window's geometry relative to the frame it sits in, move it to
-    // that frame's desktop, put the camera on the current desktop's target, and
-    // hand input back.
+    // that frame's activity, put the camera on the current activity's target,
+    // and hand input back.
     function commit(activate) {
         for (const k in targets) {
             targets[k].x = Math.round(targets[k].x);
@@ -468,29 +607,30 @@ KWin.SceneEffect {
             const e = entries[i];
             if (e.window.deleted) continue;
             seen[e.window.internalId] = true;
-            let d = desktopAt(e);
-            if (!d) d = e.desktop;
-            if (d !== e.desktop && !e.window.onAllDesktops) e.window.desktops = [d];
-            e.desktop = d;
-            const t = targetOf(d);
+            let a = activityAt(e);
+            if (a === null) a = e.activity;
+            // A window on every activity stays on every activity.
+            if (a !== e.activity && a && e.window.activities.length > 0) e.window.activities = [a];
+            e.activity = a;
+            const t = targetOf(a);
             e.window.frameGeometry = Qt.rect(Math.round(e.x - t.x), Math.round(e.y - t.y), e.width, e.height);
         }
-        // Windows not shown (minimized, hidden) share the plane: keep them where
-        // they were relative to their desktop's frames.
+        // Windows not shown (minimized, hidden, other desktops) share the
+        // plane: keep them where they were relative to their activity's frames.
         const all = KWin.Workspace.stackingOrder;
         for (let i = 0; i < all.length; ++i) {
             const w = all[i];
             if (seen[w.internalId] || w.deleted || !w.managed) continue;
             if (w.desktopWindow || w.dock || w.popupWindow || w.specialWindow) continue;
-            const d = desktopOf(w);
-            const was = entryTargets[d.id], now = targetOf(d);
+            const a = activityOf(w);
+            const was = entryTargets[a], now = targetOf(a);
             if (!was) continue;
             const dx = was.x - now.x, dy = was.y - now.y;
             if (dx === 0 && dy === 0) continue;
             const g = w.frameGeometry;
             w.frameGeometry = Qt.rect(g.x + dx, g.y + dy, g.width, g.height);
         }
-        const cur = targetOf(KWin.Workspace.currentDesktop);
+        const cur = targetOf(currentActivity);
         viewX = cur.x;
         viewY = cur.y;
         zoom = 1.0;
@@ -516,21 +656,21 @@ KWin.SceneEffect {
     // ---- named actions --------------------------------------------------------
 
     // focusWindow: apply with this window on screen and focused. A window that
-    // overlaps a frame keeps that desktop's position; one outside every frame
-    // gets the current desktop's active-screen frame centred on it.
+    // overlaps a frame keeps that activity's position; one outside every frame
+    // gets the current activity's active-screen frame centred on it.
     function focusWindow(entry) {
-        if (!desktopAt(entry)) {
+        if (activityAt(entry) === null) {
             const g = KWin.Workspace.activeScreen.geometry;
-            const t = targetOf(KWin.Workspace.currentDesktop);
+            const t = targetOf(currentActivity);
             t.x = entry.x + entry.width / 2 - (g.x + g.width / 2);
             t.y = entry.y + entry.height / 2 - (g.y + g.height / 2);
         }
         commit(entry.window);
     }
 
-    // zoomToDesktop: camera fitted to that desktop's frames, canvas stays open.
-    function zoomToDesktop(d) {
-        const t = peekTarget(d);
+    // zoomToActivity: camera fitted to that activity's frames, canvas stays open.
+    function zoomToActivity(id) {
+        const t = peekTarget(id);
         const vs = KWin.Workspace.virtualScreenGeometry;
         const l = t.x + vs.x, tp = t.y + vs.y, r = l + vs.width, b = tp + vs.height;
         const sg = KWin.Workspace.activeScreen.geometry;
@@ -541,29 +681,19 @@ KWin.SceneEffect {
         viewY = (tp + b) / 2 - (sg.y + sg.height / 2) / zoom;
     }
 
-    // gotoDesktop: apply with that desktop current, frames where they are.
-    function gotoDesktop(d) {
-        KWin.Workspace.currentDesktop = d;
+    // gotoActivity: apply with that activity current, frames where they are.
+    function gotoActivity(id) {
+        if (id && id !== currentActivity) KWin.Workspace.currentActivity = id;
         commit(null);
     }
 
-    // newDesktopAt: a new desktop whose active-screen frame is centred on the
-    // window, the window moved into it, applied and focused.
-    function newDesktopAt(entry) {
-        // Workspace.desktops is a live view, so remember ids, not the list.
-        const before = {};
-        const ds0 = KWin.Workspace.desktops;
-        for (let i = 0; i < ds0.length; ++i) before[ds0[i].id] = true;
-        KWin.Workspace.createDesktop(ds0.length, "Desktop " + (ds0.length + 1));
-        const after = KWin.Workspace.desktops;
-        let nd = null;
-        for (let i = 0; i < after.length; ++i) if (!before[after[i].id]) nd = after[i];
-        if (!nd) return;
-        const g = KWin.Workspace.activeScreen.geometry;
-        targets[nd.id] = { x: entry.x + entry.width / 2 - (g.x + g.width / 2),
-                           y: entry.y + entry.height / 2 - (g.y + g.height / 2) };
-        revision++;
-        commit(entry.window);
+    // newActivityAt: a new activity whose active-screen frame is centred on
+    // the window, the window moved into it, applied and focused. The manager
+    // answers asynchronously; activityAdded() finishes the job.
+    function newActivityAt(entry) {
+        if (!activityIds[0]) return;   // activities disabled
+        pendingNewAt = entry;
+        addActivity();
     }
 
     // ---- snapping --------------------------------------------------------------
@@ -572,22 +702,18 @@ KWin.SceneEffect {
     property bool snapCorners: true
     property bool snapGrid: false
 
-    // Rects other than the moving set: windows and every desktop's frames.
-    function snapCandidates(movingIds, movingDesktop) {
+    // Rects other than the moving set: windows and every activity's frames.
+    function snapCandidates(movingIds, movingActivity) {
         const out = [];
         for (let i = 0; i < entries.length; ++i) {
             const e = entries[i];
             if (movingIds && movingIds[e.window.internalId]) continue;
             out.push({ x: e.x, y: e.y, width: e.width, height: e.height });
         }
-        const ds = KWin.Workspace.desktops, screens = KWin.Workspace.screens;
-        for (let i = 0; i < ds.length; ++i) {
-            if (movingDesktop && ds[i] === movingDesktop) continue;
-            const t = peekTarget(ds[i]);
-            for (let j = 0; j < screens.length; ++j) {
-                const g = screens[j].geometry;
-                out.push({ x: t.x + g.x, y: t.y + g.y, width: g.width, height: g.height });
-            }
+        const fs = frames();
+        for (let i = 0; i < fs.length; ++i) {
+            if (movingActivity !== null && movingActivity !== undefined && fs[i].id === movingActivity) continue;
+            out.push({ x: fs[i].x, y: fs[i].y, width: fs[i].width, height: fs[i].height });
         }
         return out;
     }
@@ -711,38 +837,39 @@ KWin.SceneEffect {
         revision++;
     }
 
-    // sendTo(desktop): move the selection so each window keeps its place
-    // within a frame, now in that desktop's frame. sendTo(null): park the
+    // sendTo(activity): move the selection so each window keeps its place
+    // within a frame, now in that activity's frame. sendTo(null): park the
     // set near the origin at the nearest spot outside every frame.
-    function sendTo(d) {
+    function sendTo(id) {
         const list = arrangeTargets();
         if (list.length === 0) return;
-        if (d) {
+        if (id !== null && id !== undefined) {
             for (let i = 0; i < list.length; ++i) {
                 const e = list[i];
-                const from = desktopAt(e) || e.desktop;
-                const a = peekTarget(from), b = peekTarget(d);
+                let from = activityAt(e);
+                if (from === null) from = e.activity;
+                const a = peekTarget(from), b = peekTarget(id);
                 e.x += b.x - a.x;
                 e.y += b.y - a.y;
             }
         } else {
             const box = bbox(list);
             const gap = configuration.ArrangeGap;
-            const frames = snapCandidates(null, null).filter(function (r) { return r.width >= 100; });
+            const fs = frames();
             // Candidate spots: the origin, then just outside the union of all frames on each side.
             let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-            const ds = KWin.Workspace.desktops, screens = KWin.Workspace.screens;
-            for (let i = 0; i < ds.length; ++i) for (let j = 0; j < screens.length; ++j) {
-                const tg = peekTarget(ds[i]), g = screens[j].geometry;
-                l = Math.min(l, tg.x + g.x); t = Math.min(t, tg.y + g.y);
-                r = Math.max(r, tg.x + g.x + g.width); b = Math.max(b, tg.y + g.y + g.height);
+            for (let i = 0; i < fs.length; ++i) {
+                const f = fs[i];
+                l = Math.min(l, f.x); t = Math.min(t, f.y);
+                r = Math.max(r, f.x + f.width); b = Math.max(b, f.y + f.height);
             }
+            if (l === Infinity) { l = 0; t = 0; r = 0; b = 0; }
             const spots = [{ x: 0, y: 0 }, { x: l - box.width - gap, y: 0 }, { x: 0, y: t - box.height - gap },
                            { x: r + gap, y: 0 }, { x: 0, y: b + gap }];
             const clear = function (sx, sy) {
-                for (let i = 0; i < ds.length; ++i) for (let j = 0; j < screens.length; ++j) {
-                    const tg = peekTarget(ds[i]), g = screens[j].geometry;
-                    if (sx < tg.x + g.x + g.width && sx + box.width > tg.x + g.x && sy < tg.y + g.y + g.height && sy + box.height > tg.y + g.y) return false;
+                for (let i = 0; i < fs.length; ++i) {
+                    const f = fs[i];
+                    if (sx < f.x + f.width && sx + box.width > f.x && sy < f.y + f.height && sy + box.height > f.y) return false;
                 }
                 return true;
             };
@@ -766,8 +893,8 @@ KWin.SceneEffect {
             contextEntry = entry;
             if (!isSelected(entry)) selectOnly(entry);
             contextRequested(entry);
-        } else if (gestureMatches(configuration.MouseNewDesktopAt, count, modifiers) && !desktopAt(entry)) {
-            newDesktopAt(entry);
+        } else if (gestureMatches(configuration.MouseNewActivityAt, count, modifiers) && activityAt(entry) === null) {
+            newActivityAt(entry);
         } else if (gestureMatches(configuration.MouseFocusWindow, count, modifiers)) {
             focusWindow(entry);
         } else if (gestureMatches(configuration.MouseSelectToggle, count, modifiers)) {
@@ -782,9 +909,9 @@ KWin.SceneEffect {
     // The modifier of the add gesture is also the marquee modifier on the ground.
     function marqueeModifiers() { return gestureFor(configuration.MouseSelectAdd).mods; }
 
-    function frameGesture(d, count, modifiers) {
-        if (gestureMatches(configuration.MouseGotoDesktop, count, modifiers)) gotoDesktop(d);
-        else if (gestureMatches(configuration.MouseZoomToDesktop, count, modifiers)) zoomToDesktop(d);
+    function frameGesture(id, count, modifiers) {
+        if (gestureMatches(configuration.MouseGotoActivity, count, modifiers)) gotoActivity(id);
+        else if (gestureMatches(configuration.MouseZoomToActivity, count, modifiers)) zoomToActivity(id);
     }
 
     function pick(entry) { focusWindow(entry); }
@@ -879,7 +1006,7 @@ KWin.SceneEffect {
     }
 
     // ---- 1:1 behaviours (effect closed) ------------------------------------
-    // Shift the current desktop's viewport: move its windows and its target.
+    // Shift the current activity's viewport: move its windows and its target.
     function shiftAll(dx, dy) {
         const all = KWin.Workspace.stackingOrder;
         for (let i = 0; i < all.length; ++i) {
@@ -888,7 +1015,7 @@ KWin.SceneEffect {
             const g = w.frameGeometry;
             w.frameGeometry = Qt.rect(g.x + dx, g.y + dy, g.width, g.height);
         }
-        const t = targetOf(KWin.Workspace.currentDesktop);
+        const t = targetOf(currentActivity);
         t.x -= dx;
         t.y -= dy;
         viewX = t.x;
@@ -912,17 +1039,20 @@ KWin.SceneEffect {
             const dy = Math.round(area.y + (area.height - g.height) / 2 - g.y);
             effect.shiftAll(dx, dy);
         }
-        function onDesktopsChanged() { Qt.callLater(effect.desktopsChanged); }
+        function onActivitiesChanged(id) { Qt.callLater(effect.activitiesChanged); }
         function onWindowAdded(w) { if (effect.visible) Qt.callLater(effect.resync); }
         function onWindowRemoved(w) { if (effect.visible) Qt.callLater(effect.resync); }
-        // Switching desktops at 1:1 switches viewport: the ground follows.
-        function onCurrentDesktopChanged() {
+        // Switching activities at 1:1 switches viewport: the ground follows.
+        function onCurrentActivityChanged(id) {
+            if (effect.refreshActivities()) effect.ensureTargets();
             if (effect.visible) return;
-            const t = effect.targetOf(KWin.Workspace.currentDesktop);
+            const t = effect.targetOf(KWin.Workspace.currentActivity || "");
             effect.viewX = t.x;
             effect.viewY = t.y;
             effect.publishGround();
         }
+        // Another desktop's windows are a different set on the same plane.
+        function onCurrentDesktopChanged() { if (effect.visible) Qt.callLater(effect.resync); }
     }
 
     // ---- shortcuts ---------------------------------------------------------
@@ -934,12 +1064,12 @@ KWin.SceneEffect {
     }
     KWin.ShortcutHandler {
         name: "Canvas Home"
-        text: "Canvas: return this desktop to the origin"
+        text: "Canvas: return this activity to the origin"
         sequence: effect.configuration.HomeShortcut
         onActivated: {
             if (effect.visible) { effect.home(); return; }
             effect.open();
-            const t = effect.targetOf(KWin.Workspace.currentDesktop);
+            const t = effect.targetOf(effect.currentActivity);
             t.x = 0;
             t.y = 0;
             effect.commit(null);
@@ -983,6 +1113,7 @@ KWin.SceneEffect {
     // The harness writes DebugCommand + DebugSeq into kwinrc and calls reconfigure.
     function runDebug(cmd) {
         const a = cmd.trim().split(/\s+/);
+        refreshActivities();
         switch (a[0]) {
         case "open": open(); break;
         case "commit": commit(null); break;
@@ -1001,10 +1132,10 @@ KWin.SceneEffect {
         case "drag": beginDrag(Number(a[1])); dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
         case "resize": requestSize(Number(a[1]), Number(a[2]), Number(a[3]), false, false); break;
         case "resetview": {
-            // 1:1 only: forget the pan history so canvas == frame for this desktop.
+            // 1:1 only: forget the pan history so canvas == frame for this activity.
             if (visible) break;
             viewX = 0; viewY = 0;
-            targets[KWin.Workspace.currentDesktop.id] = { x: 0, y: 0 };
+            targets[currentActivity] = { x: 0, y: 0 };
             break;
         }
         case "placeby": {
@@ -1025,17 +1156,16 @@ KWin.SceneEffect {
             break;
         }
         case "frames": {
-            // frames DX DY [desktopIndex]
-            const ds = KWin.Workspace.desktops;
-            const d = a.length >= 4 ? ds[Number(a[3])] : KWin.Workspace.currentDesktop;
-            dragTarget(d, Number(a[1]), Number(a[2]));
+            // frames DX DY [activityIndex]
+            const id = a.length >= 4 ? activityIds[Number(a[3])] : currentActivity;
+            dragTarget(id, Number(a[1]), Number(a[2]));
             break;
         }
         case "pick": pick(entries[Number(a[1])]); break;
         case "focus": focusWindow(entries[Number(a[1])]); break;
-        case "goto": gotoDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
-        case "zoomto": zoomToDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
-        case "newdesktopat": newDesktopAt(entries[Number(a[1])]); break;
+        case "goto": gotoActivity(activityIds[Number(a[1])]); break;
+        case "zoomto": zoomToActivity(activityIds[Number(a[1])]); break;
+        case "newactivityat": newActivityAt(entries[Number(a[1])]); break;
         case "activate": {
             const all = KWin.Workspace.stackingOrder;
             for (let i = 0; i < all.length; ++i) {
@@ -1043,15 +1173,30 @@ KWin.SceneEffect {
             }
             break;
         }
-        case "desktop": KWin.Workspace.currentDesktop = KWin.Workspace.desktops[Number(a[1])]; break;
-        case "adddesktop": addDesktopAfter(KWin.Workspace.desktops[Number(a[1])]); break;
-        case "rmdesktop": removeDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
+        case "activity": KWin.Workspace.currentActivity = activityIds[Number(a[1])]; break;
+        case "addactivity": addActivity(); break;
+        case "rmactivity": removeActivity(activityIds[Number(a[1])]); break;
+        case "hide": case "show": {
+            // hide|show ACTIVITY_INDEX [SCREEN_INDEX]
+            const screens = KWin.Workspace.screens;
+            const s = a.length >= 3 ? screens[Number(a[2])] : KWin.Workspace.activeScreen;
+            setHidden(activityIds[Number(a[1])], s, a[0] === "hide");
+            break;
+        }
+        case "activities": {
+            // Raw ids as KWin reports them, and each window's list.
+            let s = "kwin-canvas activities: current=" + JSON.stringify(KWin.Workspace.currentActivity) + " all=" + JSON.stringify(Array.prototype.slice.call(KWin.Workspace.activities));
+            const all = KWin.Workspace.stackingOrder;
+            for (let i = 0; i < all.length; ++i) s += "\n  " + all[i].caption + " " + JSON.stringify(Array.prototype.slice.call(all[i].activities));
+            console.log(s);
+            break;
+        }
         case "list": {
             const all = KWin.Workspace.stackingOrder;
             let s = "kwin-canvas windows:";
             for (let i = 0; i < all.length; ++i) {
                 const w = all[i]; const g = w.frameGeometry;
-                s += "\n  " + (isCanvasWindow(w, true) ? "*" : " ") + " " + w.caption + " frame=(" + g.x + "," + g.y + " " + g.width + "x" + g.height + ") desktop=" + (w.onAllDesktops ? "all" : desktopOf(w).name);
+                s += "\n  " + (isCanvasWindow(w, true) ? "*" : " ") + " " + w.caption + " frame=(" + g.x + "," + g.y + " " + g.width + "x" + g.height + ") activity=" + (w.activities.length === 0 ? "all" : labelOf(activityOf(w)));
             }
             console.log(s);
             break;
@@ -1068,7 +1213,7 @@ KWin.SceneEffect {
             break;
         }
         case "begindrag": beginDrag(Number(a[1])); break;
-        case "sendto": sendTo(a[1] === "none" ? null : KWin.Workspace.desktops[Number(a[1])]); break;
+        case "sendto": sendTo(a[1] === "none" ? null : activityIds[Number(a[1])]); break;
         case "marquee": selectInRect(Number(a[1]), Number(a[2]), Number(a[3]), Number(a[4])); break;
         case "state": break;
         default: console.warn("kwin-canvas: unknown debug command", cmd);
@@ -1077,18 +1222,19 @@ KWin.SceneEffect {
     }
 
     function logState() {
-        const cur = KWin.Workspace.currentDesktop;
-        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") desktop=" + cur.name + " entries=" + entries.length
+        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") activity=" + labelOf(currentActivity) + " entries=" + entries.length
             + " snap=" + (snapEdges ? "E" : "-") + (snapCorners ? "C" : "-") + (snapGrid ? "G" : "-");
-        const ds = KWin.Workspace.desktops;
-        for (let i = 0; i < ds.length; ++i) {
-            const t = peekTarget(ds[i]);
-            s += "\n  {" + i + "} " + ds[i].name + " target=(" + t.x.toFixed(0) + "," + t.y.toFixed(0) + ")";
+        const ids = activityIds, screens = KWin.Workspace.screens;
+        for (let i = 0; i < ids.length; ++i) {
+            const t = peekTarget(ids[i]);
+            let hidden = "";
+            for (let j = 0; j < screens.length; ++j) if (isHidden(ids[i], screens[j])) hidden += (hidden ? "," : "") + screens[j].name;
+            s += "\n  {" + i + "} " + labelOf(ids[i]) + " target=(" + t.x.toFixed(0) + "," + t.y.toFixed(0) + ")" + (hidden ? " hidden=" + hidden : "");
         }
         for (let i = 0; i < entries.length; ++i) {
             const e = entries[i];
             const g = e.window.frameGeometry;
-            s += "\n  [" + i + "] " + (isSelected(e) ? "*" : " ") + e.window.caption + " canvas=(" + e.x.toFixed(0) + "," + e.y.toFixed(0) + " " + e.width + "x" + e.height + ") frame=(" + g.x + "," + g.y + ") desktop=" + e.desktop.name;
+            s += "\n  [" + i + "] " + (isSelected(e) ? "*" : " ") + e.window.caption + " canvas=(" + e.x.toFixed(0) + "," + e.y.toFixed(0) + " " + e.width + "x" + e.height + ") frame=(" + g.x + "," + g.y + ") activity=" + labelOf(e.activity);
         }
         console.log(s);
     }
@@ -1105,6 +1251,8 @@ KWin.SceneEffect {
 
     Component.onCompleted: {
         rebuildBindings();
+        loadHiddenFrames();
+        refreshActivities();
         lastDebugSeq = configuration.DebugSeq;
         if (configuration.AutoActivate) {
             Qt.callLater(open);
@@ -1191,26 +1339,27 @@ KWin.SceneEffect {
         }
     }
 
-    // The desktop's name tag: a Grip for its frame group, plus the desktop
-    // controls KDE's pager has: add after, remove.
+    // The activity's name tag: a Grip for its frame group, plus the activity
+    // controls: hide or show this frame, add an activity, remove this one.
     component FrameTag : Grip {
         id: tag
-        required property var desktop
-        required property int desktopIndex
+        required property string activity
+        required property int activityIndex
         required property var screen
-        readonly property bool current: desktop === KWin.Workspace.currentDesktop
-        readonly property color accent: effect.palette[desktopIndex % effect.palette.length]
+        readonly property bool current: activity === effect.currentActivity
+        readonly property bool hidden: effect.isHidden(activity, screen)
+        readonly property color accent: effect.palette[activityIndex % effect.palette.length]
         cursor: Qt.SizeAllCursor
         width: tagRow.implicitWidth + 12
         height: tagRow.implicitHeight + 6
         onDragStarted: effect.targetRaw = null
-        onDragged: (dx, dy) => effect.dragTarget(desktop, dx, dy)
+        onDragged: (dx, dy) => effect.dragTarget(activity, dx, dy)
 
         Rectangle {
             anchors.fill: parent
             radius: 3
             color: tag.accent
-            opacity: tag.current ? 1 : 0.8
+            opacity: tag.hidden ? 0.45 : (tag.current ? 1 : 0.8)
         }
         Row {
             id: tagRow
@@ -1218,7 +1367,7 @@ KWin.SceneEffect {
             spacing: 6
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: tag.desktop.name + " \u00b7 " + tag.screen.name + "  " + tag.screen.geometry.width + "x" + tag.screen.geometry.height
+                text: effect.labelOf(tag.activity) + " \u00b7 " + tag.screen.name + "  " + tag.screen.geometry.width + "x" + tag.screen.geometry.height
                 color: effect.textOn(tag.accent)
                 font.pixelSize: 12
                 font.bold: true
@@ -1226,16 +1375,23 @@ KWin.SceneEffect {
             IconButton {
                 anchors.verticalCenter: parent.verticalCenter
                 viewItem: tag.viewItem
-                icon: "list-add"
-                onClicked: effect.addDesktopAfter(tag.desktop)
+                icon: tag.hidden ? "view-hidden" : "view-visible"
+                onClicked: effect.setHidden(tag.activity, tag.screen, !tag.hidden)
             }
             IconButton {
-                visible: tag.desktopIndex > 0
+                visible: tag.activity !== ""
+                anchors.verticalCenter: parent.verticalCenter
+                viewItem: tag.viewItem
+                icon: "list-add"
+                onClicked: effect.addActivity()
+            }
+            IconButton {
+                visible: effect.activityIds.length > 1
                 anchors.verticalCenter: parent.verticalCenter
                 viewItem: tag.viewItem
                 icon: "edit-delete"
                 hoverColor: "#80ff4040"
-                onClicked: effect.removeDesktop(tag.desktop)
+                onClicked: effect.removeActivity(tag.activity)
             }
         }
     }
@@ -1348,26 +1504,27 @@ KWin.SceneEffect {
         // Z order, back to front: ground, monitor frames with their real
         // desktop background, windows in KWin's stacking order, frame tags, HUD.
 
-        // Monitor frames: one per desktop per output. A desktop's frames are a
-        // rigid group; dragging any edge band moves them all. The interior is
-        // the Plasma desktop background for that output, so each frame reads
-        // as a desk top.
+        // Monitor frames: one per activity per output. An activity's frames
+        // are a rigid group; dragging any edge band moves them all. The
+        // interior is the Plasma desktop background for that output, so each
+        // frame reads as a desk top. A hidden frame is not drawn; its tag stays.
         Repeater {
-            model: KWin.Workspace.desktops
+            model: effect.activityIds
             delegate: Repeater {
-                id: desktopFrames
-                required property var modelData
+                id: activityFrames
+                required property string modelData
                 required property int index
-                readonly property var desktop: modelData
-                readonly property bool current: modelData === KWin.Workspace.currentDesktop
+                readonly property string activity: modelData
+                readonly property bool current: modelData === effect.currentActivity
                 readonly property color accent: effect.palette[index % effect.palette.length]
                 model: KWin.Workspace.screens
                 delegate: Item {
                     id: frame
                     required property var modelData
                     readonly property rect og: modelData.geometry
-                    x: { effect.revision; return (effect.peekTarget(desktopFrames.desktop).x + og.x - effect.viewX) * effect.zoom - view.sg.x; }
-                    y: { effect.revision; return (effect.peekTarget(desktopFrames.desktop).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
+                    visible: !effect.isHidden(activityFrames.activity, modelData)
+                    x: { effect.revision; return (effect.peekTarget(activityFrames.activity).x + og.x - effect.viewX) * effect.zoom - view.sg.x; }
+                    y: { effect.revision; return (effect.peekTarget(activityFrames.activity).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
                     width: og.width * effect.zoom
                     height: og.height * effect.zoom
                     z: 1
@@ -1378,23 +1535,23 @@ KWin.SceneEffect {
                     KWin.DesktopBackground {
                         anchors.fill: parent
                         output: frame.modelData
-                        desktop: desktopFrames.desktop
-                        activity: KWin.Workspace.currentActivity || "default"
+                        desktop: KWin.Workspace.currentDesktop
+                        activity: activityFrames.activity || "default"
                     }
 
                     // Sheet tint: keeps the frame legible when no background window exists.
                     Rectangle {
                         anchors.fill: parent
-                        color: desktopFrames.accent
-                        opacity: desktopFrames.current ? 0.10 : 0.06
+                        color: activityFrames.accent
+                        opacity: activityFrames.current ? 0.10 : 0.06
                     }
 
                     Rectangle {
                         anchors.fill: parent
                         color: "transparent"
-                        border.width: desktopFrames.current ? 2 : 1
-                        border.color: desktopFrames.accent
-                        opacity: desktopFrames.current ? 0.95 : 0.6
+                        border.width: activityFrames.current ? 2 : 1
+                        border.color: activityFrames.accent
+                        opacity: activityFrames.current ? 0.95 : 0.6
                     }
 
                     // A gesture on the frame's own area (windows sit above and
@@ -1402,7 +1559,7 @@ KWin.SceneEffect {
                     TapHandler {
                         enabled: !view.spaceHeld
                         acceptedButtons: Qt.LeftButton
-                        onTapped: effect.frameGesture(desktopFrames.desktop, tapCount, point.modifiers)
+                        onTapped: effect.frameGesture(activityFrames.activity, tapCount, point.modifiers)
                     }
 
                     // Edge bands: grips for the whole group.
@@ -1418,7 +1575,7 @@ KWin.SceneEffect {
                             width: (index === 0 || index === 2) ? frame.width : band
                             height: (index === 1 || index === 3) ? frame.height : band
                             onDragStarted: effect.targetRaw = null
-                            onDragged: (dx, dy) => effect.dragTarget(desktopFrames.desktop, dx, dy)
+                            onDragged: (dx, dy) => effect.dragTarget(activityFrames.activity, dx, dy)
                         }
                     }
                 }
@@ -1452,7 +1609,7 @@ KWin.SceneEffect {
                     readonly property bool sel: { effect.selectionRev; return effect.isSelected(thumb.entry); }
                     border.width: sel ? 3 : (body.hovered || body.active ? 2 : 1)
                     border.color: sel ? Kirigami.Theme.highlightColor
-                                : (body.hovered || body.active ? effect.desktopColor(thumb.entry.desktop) : "#40ffffff")
+                                : (body.hovered || body.active ? effect.activityColor(thumb.entry.activity) : "#40ffffff")
                 }
 
                 Text {
@@ -1529,20 +1686,20 @@ KWin.SceneEffect {
 
         // Frame tags, above the windows so they can always be grabbed.
         Repeater {
-            model: KWin.Workspace.desktops
+            model: effect.activityIds
             delegate: Repeater {
-                id: desktopTags
-                required property var modelData
+                id: activityTags
+                required property string modelData
                 required property int index
                 model: KWin.Workspace.screens
                 delegate: FrameTag {
                     required property var modelData
                     viewItem: view
-                    desktop: desktopTags.modelData
-                    desktopIndex: desktopTags.index
+                    activity: activityTags.modelData
+                    activityIndex: activityTags.index
                     screen: modelData
-                    x: { effect.revision; return (effect.peekTarget(desktop).x + screen.geometry.x - effect.viewX) * effect.zoom - view.sg.x; }
-                    y: { effect.revision; return (effect.peekTarget(desktop).y + screen.geometry.y - effect.viewY) * effect.zoom - view.sg.y - height - 2; }
+                    x: { effect.revision; return (effect.peekTarget(activity).x + screen.geometry.x - effect.viewX) * effect.zoom - view.sg.x; }
+                    y: { effect.revision; return (effect.peekTarget(activity).y + screen.geometry.y - effect.viewY) * effect.zoom - view.sg.y - height - 2; }
                     z: 60000
                 }
             }
@@ -1628,19 +1785,19 @@ KWin.SceneEffect {
             PC3.MenuSeparator {}
             PC3.Menu {
                 title: "Send to"
-                icon.name: "virtual-desktops"
+                icon.name: "activities"
                 Repeater {
-                    model: KWin.Workspace.desktops
+                    model: effect.activityIds
                     delegate: PC3.MenuItem {
-                        required property var modelData
+                        required property string modelData
                         required property int index
-                        text: modelData.name
+                        text: effect.labelOf(modelData)
                         onTriggered: effect.sendTo(modelData)
                         Rectangle { anchors.verticalCenter: parent.verticalCenter; anchors.right: parent.right; anchors.rightMargin: Kirigami.Units.smallSpacing; width: 12; height: 12; radius: 3; color: effect.palette[index % effect.palette.length] }
                     }
                 }
                 PC3.MenuSeparator {}
-                PC3.MenuItem { text: "Plane, outside every desktop"; icon.name: "edit-none"; onTriggered: effect.sendTo(null) }
+                PC3.MenuItem { text: "Plane, outside every activity"; icon.name: "edit-none"; onTriggered: effect.sendTo(null) }
             }
             PC3.MenuSeparator {}
             PC3.MenuItem { text: "Clear selection";      icon.name: "edit-select-none";      onTriggered: effect.clearSelection() }
@@ -1709,26 +1866,26 @@ KWin.SceneEffect {
 
                 Kirigami.Icon {
                     visible: !hud.square
-                    source: "virtual-desktops"
+                    source: "activities"
                     Layout.preferredWidth: Kirigami.Units.iconSizes.small
                     Layout.preferredHeight: Kirigami.Units.iconSizes.small
                     Layout.alignment: Qt.AlignCenter
                 }
                 PC3.Label {
-                    text: hud.vertical ? KWin.Workspace.currentDesktop.name + "\n" + Math.round(effect.zoom * 100) + "%"
-                                       : KWin.Workspace.currentDesktop.name + "   " + Math.round(effect.zoom * 100) + "%"
+                    text: hud.vertical ? effect.labelOf(effect.currentActivity) + "\n" + Math.round(effect.zoom * 100) + "%"
+                                       : effect.labelOf(effect.currentActivity) + "   " + Math.round(effect.zoom * 100) + "%"
                     horizontalAlignment: Text.AlignHCenter
                     Layout.alignment: Qt.AlignCenter
                     Layout.columnSpan: hud.square ? hud.squareColumns : 1
                     Layout.rightMargin: hud.vertical || hud.square ? 0 : Kirigami.Units.smallSpacing
                 }
-                // One swatch per desktop in its frame colour; click to zoom to it.
+                // One swatch per activity in its frame colour; click to zoom to it.
                 Repeater {
-                    model: KWin.Workspace.desktops
+                    model: effect.activityIds
                     delegate: Rectangle {
-                        required property var modelData
+                        required property string modelData
                         required property int index
-                        readonly property bool current: modelData === KWin.Workspace.currentDesktop
+                        readonly property bool current: modelData === effect.currentActivity
                         width: Kirigami.Units.iconSizes.small
                         height: Kirigami.Units.iconSizes.small
                         radius: 3
@@ -1736,15 +1893,15 @@ KWin.SceneEffect {
                         border.width: current ? 2 : 0
                         border.color: Kirigami.Theme.textColor
                         Layout.alignment: Qt.AlignCenter
-                        PC3.ToolTip.text: modelData.name
+                        PC3.ToolTip.text: effect.labelOf(modelData)
                         PC3.ToolTip.visible: swatchHover.hovered
                         HoverHandler { id: swatchHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { acceptedButtons: Qt.LeftButton; onTapped: effect.zoomToDesktop(modelData) }
+                        TapHandler { acceptedButtons: Qt.LeftButton; onTapped: effect.zoomToActivity(modelData) }
                     }
                 }
                 Sep {}
                 PC3.ToolButton { icon.name: "zoom-fit-best";   text: "Fit";    display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom to fit (" + effect.keyLabel(effect.configuration.KeyFit) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.zoomExtents() }
-                PC3.ToolButton { icon.name: "go-home";         text: "Home";   display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Look through this desktop's frames (" + effect.keyLabel(effect.configuration.KeyHome) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.home() }
+                PC3.ToolButton { icon.name: "go-home";         text: "Home";   display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Look through this activity's frames (" + effect.keyLabel(effect.configuration.KeyHome) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.home() }
                 PC3.ToolButton { icon.name: "zoom-in";         text: "In";     display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom in (" + effect.keyLabel(effect.configuration.KeyZoomIn) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom * effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
                 PC3.ToolButton { icon.name: "zoom-out";        text: "Out";    display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom out (" + effect.keyLabel(effect.configuration.KeyZoomOut) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom / effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
                 Sep {}
@@ -1767,7 +1924,7 @@ KWin.SceneEffect {
                         PC3.MenuItem { text: "Effect settings…";  icon.name: "preferences-desktop-effects"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_kwin_effects") }
                         PC3.MenuItem { text: "Shortcuts…";        icon.name: "preferences-desktop-keyboard"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_keys") }
                         PC3.MenuItem { text: "Screen edges…";     icon.name: "preferences-desktop-screen-edges"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_kwinscreenedges") }
-                        PC3.MenuItem { text: "Virtual desktops…"; icon.name: "virtual-desktops"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_kwin_virtualdesktops") }
+                        PC3.MenuItem { text: "Activities…";       icon.name: "activities"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_activities") }
                     }
                 }
             }
@@ -1807,18 +1964,19 @@ KWin.SceneEffect {
                 K { text: "wheel / " + effect.keyLabel(effect.configuration.KeyZoomIn) + " / " + effect.keyLabel(effect.configuration.KeyZoomOut) } V { text: "zoom at the cursor" }
                 K { text: "drag window" }                                       V { text: "move it on the plane" }
                 K { text: "drag window edge or corner" }                        V { text: "resize it" }
-                K { text: "drag frame tag or edge" }                            V { text: "move that desktop's screens" }
+                K { text: "drag frame tag or edge" }                            V { text: "move that activity's screens" }
+                K { text: "eye on a frame tag" }                                V { text: "hide or show that frame; a hidden frame takes no windows" }
                 K { text: effect.gestureLabel(effect.configuration.MouseSelect) + " window" }        V { text: "select it" }
                 K { text: effect.gestureLabel(effect.configuration.MouseSelectAdd) + " window, or +drag ground" } V { text: "add to the selection, or select by rectangle" }
                 K { text: effect.gestureLabel(effect.configuration.MouseSelectToggle) + " window" }  V { text: "toggle its selection; a selected window drags the whole selection" }
                 K { text: effect.gestureLabel(effect.configuration.MouseContextMenu) + " window" }   V { text: "arrange the selection: horizontal, vertical, tile, grid, cascade" }
                 K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: "apply, focused on it" }
-                K { text: effect.gestureLabel(effect.configuration.MouseZoomToDesktop) + " frame" }  V { text: "zoom to that desktop" }
-                K { text: effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame" }    V { text: "apply with that desktop current" }
-                K { text: effect.gestureLabel(effect.configuration.MouseNewDesktopAt) + " window outside frames" } V { text: "new desktop centred on it" }
+                K { text: effect.gestureLabel(effect.configuration.MouseZoomToActivity) + " frame" }  V { text: "zoom to that activity" }
+                K { text: effect.gestureLabel(effect.configuration.MouseGotoActivity) + " frame" }    V { text: "apply with that activity current" }
+                K { text: effect.gestureLabel(effect.configuration.MouseNewActivityAt) + " window outside frames" } V { text: "new activity centred on it" }
                 K { text: effect.keyLabel(effect.configuration.KeyApply) }      V { text: "apply and close" }
                 K { text: effect.keyLabel(effect.configuration.KeyCancel) }     V { text: "cancel" }
-                K { text: effect.keyLabel(effect.configuration.KeyHome) }       V { text: "look through this desktop's frames" }
+                K { text: effect.keyLabel(effect.configuration.KeyHome) }       V { text: "look through this activity's frames" }
                 K { text: effect.keyLabel(effect.configuration.KeyOrigin) }     V { text: "camera to the canvas origin" }
                 K { text: effect.keyLabel(effect.configuration.KeyFit) }        V { text: "zoom to fit" }
             }

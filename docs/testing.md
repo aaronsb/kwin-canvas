@@ -51,23 +51,25 @@ make nest-cmd CMD="pan -1500 -400"        # screen px
 make nest-cmd CMD="zoom 0.4 960 540"      # zoom [anchorX anchorY], global px
 make nest-cmd CMD=extents
 make nest-cmd CMD=commit
-make nest-cmd CMD="frames 300 0 1"        # move desktop index 1's frames by screen px
+make nest-cmd CMD="frames 300 0 1"        # move activity index 1's frames by screen px
 make nest-cmd CMD="place 2 2300 100"      # set entry 2's canvas position
 make nest-cmd CMD="placeby KCalc 100 120 480 420"   # by caption, with optional size
 make nest-cmd CMD="resize 0 1000 700"     # command entry 0's window to a size
 make nest-cmd CMD="activate KCalc"        # by caption substring, at 1:1
-make nest-cmd CMD="shift 2200 900"        # move the current desktop's viewport at 1:1
-make nest-cmd CMD="desktop 1"             # switch to desktop index 1
-make nest-cmd CMD="adddesktop 0"          # insert a desktop after index 0
-make nest-cmd CMD="rmdesktop 1"
+make nest-cmd CMD="shift 2200 900"        # move the current activity's viewport at 1:1
+make nest-cmd CMD="activity 1"            # switch to activity index 1 (asynchronous)
+make nest-cmd CMD=addactivity             # add an activity, named by count
+make nest-cmd CMD="rmactivity 2"
+make nest-cmd CMD="hide 1 0"              # hide activity 1's frame on screen 0; show puts it back
+make nest-cmd CMD=activities              # raw activity ids and each window's list
 make nest-cmd CMD=resetview               # 1:1 only: forget the pan so canvas == frame
-make nest-cmd CMD=list                    # every window with its frame and desktop
+make nest-cmd CMD=list                    # every window with its frame and activity
 make nest-cmd CMD=cancel
 ```
 
 Each command prints the effect state afterwards: `visible`, `zoom`, `view`,
-the current desktop, every desktop's target, and every entry's canvas rect,
-frame and desktop.
+the current activity, every activity's target (and hidden outputs), and
+every entry's canvas rect, frame and activity.
 
 **Real input.** `make tools` builds `build/tools/fakeinput`, a small C client
 for KWin's `org_kde_kwin_fake_input` protocol. `dev/nest.sh input` runs it
@@ -101,9 +103,9 @@ them at fixed canvas positions with `placeby`, then sources each
 `tests/lib.sh`:
 
 - `c "command"` sends a debug command and keeps the state it printed.
-- `sget zoom|viewx|viewy|visible|desktop|entries|ndesktops` reads the state line.
-- `eget CAPTION x|y|w|h|fx|fy|desktop|index` reads an entry by caption substring.
-- `tget INDEX x|y|name` reads a desktop target.
+- `sget zoom|viewx|viewy|visible|activity|entries|nactivities` reads the state line.
+- `eget CAPTION x|y|w|h|fx|fy|activity|index` reads an entry by caption substring.
+- `tget INDEX x|y|name|hidden` reads an activity target.
 - `assert_eq`, `assert_near NAME ACTUAL EXPECTED [TOL]`, `assert_true`.
 - `snap NAME` screenshots the nest and compares against `tests/golden/NAME.png`
   by normalized RMSE, within `GOLDEN_TOLERANCE` (default 0.02). With

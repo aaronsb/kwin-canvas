@@ -10,22 +10,30 @@ Three coordinate spaces:
 | global | KWin's coordinate space across all outputs |
 | screen | one output's local pixels; `global - output.geometry.topLeft` |
 
-One camera and one target per virtual desktop. `view` is the canvas point
-the camera puts at global (0,0), and `zoom` is its scale. `target(d)` is the
-canvas point at global (0,0) when desktop `d` is shown; its monitor frames are
-drawn at `target(d) + output.geometry` for every output, so each desktop is a
-rigid group of frames in KDE's layout, placed anywhere on the plane. While the
-canvas is closed, `view == target(current desktop)`.
+One camera and one target per activity. `view` is the canvas point the
+camera puts at global (0,0), and `zoom` is its scale. `target(a)` is the
+canvas point at global (0,0) when activity `a` is shown; its monitor frames
+are drawn at `target(a) + output.geometry` for every output, so each activity
+is a rigid group of frames in KDE's layout, placed anywhere on the plane.
+While the canvas is closed, `view == target(current activity)`.
 
 ```
 global = (canvas - view) * zoom
 canvas = view + global / zoom
-frame geometry = canvas - target(desktop of the window)
+frame geometry = canvas - target(activity of the window)
 ```
 
-A window's canvas position is its KWin geometry plus its own desktop's
-target. Desktops never placed are laid out in a row beside the current one on
-first open, which moves nothing.
+A window's canvas position is its KWin geometry plus its own activity's
+target. Activities never placed are laid out in a row beside the current one
+on first open, which moves nothing. Virtual desktops stay ordinary KWin
+desktops: the canvas shows the current desktop's windows across every
+activity, and a desktop switch changes the set of windows, not the view.
+
+A frame can be switched off from its tag. `HiddenFrames` lists
+`activityId|outputName` keys; a hidden frame is not drawn, is not a snap
+candidate, is left out of fit, and never claims a window on apply. The
+effect writes the key through its own `configuration` map and
+`writeConfig()`, so the choice survives a restart.
 
 At 1:1, `zoom` is 1 and a window at canvas `c` has KWin frame geometry
 `c - view`. That is the whole trick. KWin's geometry *is* the canvas table,
@@ -46,9 +54,9 @@ per-frame work. Two things happen in this state:
 - `Meta+Space` opens the canvas.
 
 **Open.** `open()` sets `zoom = 1`, records `entryView` and a copy of the
-targets, snapshots every canvas window on every desktop in stacking order
-into `entries[] = {window, desktop, x, y, width, height}` with
-`x = frame.x + target(desktop).x` and so on, then moves the camera to the
+targets, snapshots every canvas window of the current desktop, on every
+activity, in stacking order into `entries[] = {window, activity, x, y, width,
+height}` with `x = frame.x + target(activity).x` and so on, then moves the camera to the
 configured opening view (`OpenZoom`, default fit-everything). The per-screen delegate draws the ground and one live `WindowThumbnail`
 per entry at `(entry - view) * zoom - screen.topLeft`. Pan changes `view`.
 Zoom changes `zoom` and `view` together so the canvas point under the anchor
@@ -63,22 +71,37 @@ view  = c - anchor / zoom
 Dragging a thumbnail edits the entry in canvas units. Nothing touches KWin
 geometry while the canvas is open.
 
-Dragging a frame's name tag or edge band changes that desktop's target. The
+Dragging a frame's name tag or edge band changes that activity's target. The
 camera is never involved in what gets applied.
 
-**Commit.** For every entry, the desktop whose frame contains the entry's
-centre wins: the window is moved to that desktop if it differs, and
-`frameGeometry = entry - target(that desktop)`. An entry in no frame keeps
-its desktop. Minimized and hidden windows are shifted by how much their
-desktop's target moved, so they stay put on the plane. The camera is set to
-the current desktop's target at zoom 1, the ground offset is published, and
-the effect hides. `pick()` first centres the current desktop's active-screen
-frame on the window if no frame contains it. `cancel()` restores the targets
-and `entryView` and hides without writing anything.
+**Commit.** For every entry, the activity whose frame overlaps the entry the
+most wins: the window's `activities` list is set to that one if it differs
+(a window on every activity stays on every activity), and
+`frameGeometry = entry - target(that activity)`. An entry in no frame keeps
+its activity. Windows not shown (minimized, hidden, other desktops) are
+shifted by how much their activity's target moved, so they stay put on the
+plane. The camera is set to the current activity's target at zoom 1, the
+ground offset is published, and the effect hides. `pick()` first centres the
+current activity's active-screen frame on the window if no frame contains
+it. `cancel()` restores the targets and `entryView` and hides without
+writing anything.
 
-**Desktop switch at 1:1.** `currentDesktopChanged` sets `view` to the new
-desktop's target and republishes the ground, so the wallpaper scrolls to
-where that desktop's viewport sits on the plane.
+**Activity switch at 1:1.** `currentActivityChanged` sets `view` to the new
+activity's target and republishes the ground, so the wallpaper scrolls to
+where that activity's viewport sits on the plane.
+
+**Activities.** KWin's `Workspace` exposes `activities` (ids), a writable
+`currentActivity`, and `activitiesChanged` for single additions and
+removals; the bulk load from the activity manager after startup arrives with
+no signal, so the effect re-reads the list on every open, change, and debug
+command. Names are not in the scripting API: one `DBusCall` per id asks
+`org.kde.ActivityManager` for `ActivityName`, and `AddActivity` and
+`RemoveActivity` back the tag's plus and trash buttons. `AddActivity`
+answers asynchronously with the id, so "new activity at a window" parks the
+window until the reply, then places the target, moves the window, makes the
+activity current and applies. Activating a window on another activity does
+not switch KWin to it. With activities disabled the list is empty and one
+unnamed activity stands in.
 
 ## Why the ground has to be drawn twice
 
@@ -145,11 +168,13 @@ Verified against the 6.7.5 source, in `src/`:
 
 Back to front inside each screen's view: the ground, the monitor frames, the
 windows in KWin's stacking order, the frame tags, the HUD. A frame's interior
-is a `DesktopBackground` item for its output, desktop and activity, which is
-the real Plasma wallpaper. Wallpapers in Plasma are per screen and per
-activity, so frames of different desktops show the same image unless
-activities differ. A faint tint in the desktop's colour sits over it so the
-frame reads as a sheet even with no background window, as in the nest.
+is a `DesktopBackground` item for its output, the current desktop and the
+frame's activity, which is the real Plasma wallpaper. Plasmashell keeps one
+desktop window per screen, on every activity, and swaps its containment on
+an activity switch, so every frame shows the current activity's wallpaper;
+the other activities' wallpapers appear only at 1:1 after switching. A faint
+tint in the activity's colour sits over it so the frame reads as a sheet
+even with no background window, as in the nest.
 
 `DesktopBackground` with an empty `activity` crashes KWin 6.7 when activities
 are disabled (null dereference in `updateWindow`), so the effect always
@@ -179,7 +204,7 @@ Attached properties inside a `Connections` handler resolve against the
 
 Drags keep unsnapped positions (`dragRaw`, `targetRaw`) and snap the moving
 set's bounding box as one, so a drag can always pull away. Candidates are
-every other window and every desktop's frames. Edges snap per axis, corners
+every other window and every activity's frames that are not hidden. Edges snap per axis, corners
 only when both axes meet the same candidate, the grid rounds left and top to
 `SnapGridSize`; the nearest within `SnapDistance` screen pixels wins. Resize
 grips snap the edge being dragged through `snapEdge1D`. The three toggles
@@ -187,11 +212,11 @@ start from config on each open and live in the toolbar.
 
 ## Send to
 
-`sendTo(desktop)` translates each selected window by the difference between
+`sendTo(activity)` translates each selected window by the difference between
 its current frame's target and the destination's, so it keeps its place on
-screen in the new desktop. `sendTo(null)` parks the set's bounding box at the
+screen in the new activity. `sendTo(null)` parks the set's bounding box at the
 nearest of a few spots around the union of all frames, the origin first.
-Desktop colours come from `palettes[Palette]`; okabe-ito, tol and ibm are
+Activity colours come from `palettes[Palette]`; okabe-ito, tol and ibm are
 published colour-blind safe sets, mono is luminance only, and tag text
 picks black or white by luminance.
 
@@ -211,8 +236,8 @@ the primary display only, which is the first output in
 `Workspace.screenOrder`, the order plasmashell sets. `HudPosition` picks an
 edge or corner, and `HudShape` the flow: one `GridLayout` whose flow, rows
 and columns follow the shape, with the label spanning the square's width and
-the separators hidden there. It shows the current desktop and zoom, the camera and apply
-actions, a help panel rendered from the binding config, and a menu that opens
+the separators hidden there. It shows the current activity and zoom, one swatch per activity, the camera
+and apply actions, a help panel rendered from the binding config, and a menu that opens
 the settings pages through `KCMLauncher.openSystemSettings`, as Overview does.
 
 ## Known limits
@@ -220,6 +245,10 @@ the settings pages through `KCMLauncher.openSystemSettings`, as Overview does.
 - **Frames are not editable.** They are the outputs in KDE's display
   arrangement, read from `Workspace.screens`; changing that layout is
   Display Configuration's job and the frames follow.
+- **Frames share one wallpaper.** Plasmashell has one desktop window per
+  screen, so every frame shows the current activity's wallpaper.
+- **Activity changes are asynchronous.** Adding, removing or switching goes
+  through the activity manager; the canvas follows when KWin reports it.
 
 - **No interaction while zoomed.** The canvas is a navigation mode. This is
   the trade that makes the rest possible.

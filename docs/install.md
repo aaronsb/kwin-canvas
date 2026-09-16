@@ -63,7 +63,9 @@ make enable    # step 3 above
 - **Meta+Space** opens the canvas. It moves nothing until you apply.
 - **Esc** closes it and leaves every window where it was.
 - **Enter** applies: every window goes where you put it on the plane, and
-  the frames decide what each screen shows.
+  the frames decide what each screen shows in each activity. With one
+  activity there is one group of frames; add more from a frame tag's plus
+  button or in System Settings → Activities.
 - Windows you drag outside every frame are off-screen at 1:1. Open the
   canvas again to find them, or activate them from the task manager and the
   plane pans to them.
@@ -99,7 +101,8 @@ it.
 - The monitor frames reproduce KDE's display arrangement and the canvas
   never changes it. Rearrange or resize displays in System Settings →
   Display Configuration; the frames follow.
-
+- Every frame shows the current activity's wallpaper; Plasma keeps one
+  desktop window per screen.
 - No interaction with windows while zoomed out; the canvas is for arranging
   and navigating, work happens at 1:1.
 - X11 (XWayland) windows cannot be placed beyond about ±32k pixels.

@@ -1,18 +1,19 @@
 # kwin-canvas
 
-![kwin-canvas: the canvas zoomed to fit, two desktops as monitor frames on a grid, windows as live thumbnails](docs/images/02-hero.png)
+![kwin-canvas: the canvas zoomed to fit, two activities as monitor frames on a grid, windows as live thumbnails](docs/images/02-hero.png)
 
 An infinite canvas for KDE Plasma, built on KWin's public scripting API. No
 patches, no forked compositor, no plugin against private headers.
 
-Windows live on one unbounded plane. Every virtual desktop is a viewport onto
-that plane, drawn while the canvas is open as a group of **monitor frames**:
+Windows live on one unbounded plane. Every activity is a viewport onto that
+plane, drawn while the canvas is open as a group of **monitor frames**:
 outlined rectangles, one per output in the layout KDE knows, tagged with the
-desktop and output names. Drag windows into a frame or drag a desktop's frames
-over a cluster of windows, press Enter, and that is what the real screens show
-on that desktop. Switching desktops at 1:1 switches viewport, and dragging a
-window into another desktop's frame moves it to that desktop. At 1:1 nothing
-is running: every window is an ordinary KWin window at an ordinary
+activity and output names. Drag windows into a frame or drag an activity's
+frames over a cluster of windows, press Enter, and that is what the real
+screens show in that activity. Switching activities at 1:1 switches viewport,
+and dragging a window into another activity's frame moves it to that
+activity. Virtual desktops stay what they are: the canvas shows the current
+desktop's windows. At 1:1 nothing is running: every window is an ordinary KWin window at an ordinary
 position, some of them off-screen, and KWin handles input, popups, XWayland and
 focus exactly as it always does. Open the canvas to zoom out, pan, rearrange
 and pick; close it and the new layout is written back as plain window geometry.
@@ -63,21 +64,22 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | drag on ground, Space+drag, or middle-drag | | pan |
 | wheel | | zoom at the cursor |
 | drag a window | | move it on the plane |
-| drag a frame's tag or edge | | move that desktop's frames (all together) |
+| drag a frame's tag or edge | | move that activity's frames (all together) |
 | drag a window's edge or corner | | resize it, live |
-| + on a frame tag | | add a desktop after that one |
-| trash on a frame tag | | remove that desktop (never the first) |
+| eye on a frame tag | | hide or show that frame: a hidden frame is not drawn and takes no windows, for an activity that lives on one monitor |
+| + on a frame tag | | add an activity |
+| trash on a frame tag | | remove that activity (never the last) |
 | click a window | | select it; Shift+click adds, Ctrl+click toggles, Shift+drag on the ground selects by rectangle |
-| drag a selected window | | move the whole selection, geometry kept; drop it in a frame and apply to move them all to that desktop |
-| right-click a window | | arrange the selection: horizontally, vertically, tile, grid (rows × columns), cascade; send to a desktop or to the plane |
+| drag a selected window | | move the whole selection, geometry kept; drop it in a frame and apply to move them all to that activity |
+| right-click a window | | arrange the selection: horizontally, vertically, tile, grid (rows × columns), cascade; send to an activity or to the plane |
 | toolbar toggles | | snap to edges, corners, grid while dragging or resizing (grid step and snap distance are settings) |
 | double-click a window | | apply with it on screen, focus it |
-| double-click a frame | | apply with that desktop current |
-| Ctrl+double-click a frame, or click its swatch in the toolbar | | zoom to that desktop |
-| Shift+double-click a window outside every frame | | new desktop centred on it, window moved there |
+| double-click a frame | | apply with that activity current |
+| Ctrl+double-click a frame, or click its swatch in the toolbar | | zoom to that activity |
+| Shift+double-click a window outside every frame | | new activity centred on it, window moved there |
 | Enter | | apply and close |
 | Esc | | cancel, nothing moves |
-| Home | | look through the current desktop's frames |
+| Home | | look through the current activity's frames |
 | 0 | | canvas origin |
 | F / W | | zoom to fit |
 
@@ -95,7 +97,8 @@ Everything above is reassignable the KDE way:
   Zoom Out), which have no default chord until you give them one.
 - **Effect settings** are in Desktop Effects → Canvas → configure: the opening
   view, the keys the open canvas listens for, the mouse gestures, snapping, the
-  desktop colour scheme (including colour-blind safe sets), and the ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
+  activity colour scheme (including colour-blind safe sets), hidden frames,
+  and the ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
 - **Screen edges** are assigned on the Screen Edges page.
 
 The toolbar inside the canvas sits on the primary display, at any edge or
@@ -123,7 +126,8 @@ make demo             # scripted session driven by real input; stills, frames, m
 ```
 
 The nest is a second `kwin_wayland` as a window of your session, with its own
-D-Bus bus, config and plasmashell, so nothing touches the real desktop. Inside
+D-Bus bus, config, activity manager (two activities seeded) and plasmashell,
+so nothing touches the real desktop. `NEST_OUTPUTS=2` gives it two screens. Inside
 it the canvas chords are Ctrl+Alt+Space and Ctrl+Alt+Home, because the outer
 desktop sees Meta chords first. `build/tools/fakeinput` injects pointer and
 keyboard events into it through KWin's fake-input protocol, which is how the

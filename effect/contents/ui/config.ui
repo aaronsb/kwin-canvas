@@ -13,7 +13,7 @@
      <item row="1" column="1"><widget class="QLineEdit" name="kcfg_HudPosition"/></item>
      <item row="2" column="0"><widget class="QLabel" name="label_HudShape"><property name="text"><string>Toolbar shape (auto, horizontal, vertical, square)</string></property><property name="buddy"><cstring>kcfg_HudShape</cstring></property></widget></item>
      <item row="2" column="1"><widget class="QLineEdit" name="kcfg_HudShape"/></item>
-     <item row="3" column="0"><widget class="QLabel" name="label_Palette"><property name="text"><string>Desktop colours (default, okabe-ito, tol, ibm, mono)</string></property><property name="buddy"><cstring>kcfg_Palette</cstring></property></widget></item>
+     <item row="3" column="0"><widget class="QLabel" name="label_Palette"><property name="text"><string>Activity colours (default, okabe-ito, tol, ibm, mono)</string></property><property name="buddy"><cstring>kcfg_Palette</cstring></property></widget></item>
      <item row="3" column="1"><widget class="QLineEdit" name="kcfg_Palette"/></item>
     </layout></widget></item>
    <item><widget class="QGroupBox" name="group1"><property name="title"><string>Keys inside the canvas (Qt key names, comma separated)</string></property>
@@ -39,10 +39,10 @@
     <layout class="QFormLayout" name="form2">
      <item row="0" column="0"><widget class="QLabel" name="label_MouseFocusWindow"><property name="text"><string>On a window: apply focused on it</string></property><property name="buddy"><cstring>kcfg_MouseFocusWindow</cstring></property></widget></item>
      <item row="0" column="1"><widget class="QLineEdit" name="kcfg_MouseFocusWindow"/></item>
-     <item row="1" column="0"><widget class="QLabel" name="label_MouseZoomToDesktop"><property name="text"><string>On a frame: zoom to that desktop</string></property><property name="buddy"><cstring>kcfg_MouseZoomToDesktop</cstring></property></widget></item>
-     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_MouseZoomToDesktop"/></item>
-     <item row="2" column="0"><widget class="QLabel" name="label_MouseGotoDesktop"><property name="text"><string>On a frame: apply with that desktop current</string></property><property name="buddy"><cstring>kcfg_MouseGotoDesktop</cstring></property></widget></item>
-     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_MouseGotoDesktop"/></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_MouseZoomToActivity"><property name="text"><string>On a frame: zoom to that activity</string></property><property name="buddy"><cstring>kcfg_MouseZoomToActivity</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_MouseZoomToActivity"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="label_MouseGotoActivity"><property name="text"><string>On a frame: apply with that activity current</string></property><property name="buddy"><cstring>kcfg_MouseGotoActivity</cstring></property></widget></item>
+     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_MouseGotoActivity"/></item>
      <item row="4" column="0"><widget class="QLabel" name="label_MouseSelect"><property name="text"><string>On a window: select it alone</string></property><property name="buddy"><cstring>kcfg_MouseSelect</cstring></property></widget></item>
      <item row="4" column="1"><widget class="QLineEdit" name="kcfg_MouseSelect"/></item>
      <item row="5" column="0"><widget class="QLabel" name="label_MouseSelectAdd"><property name="text"><string>On a window: add to selection (its modifier + drag on ground: rectangle select)</string></property><property name="buddy"><cstring>kcfg_MouseSelectAdd</cstring></property></widget></item>
@@ -51,14 +51,14 @@
      <item row="6" column="1"><widget class="QLineEdit" name="kcfg_MouseSelectToggle"/></item>
      <item row="7" column="0"><widget class="QLabel" name="label_MouseContextMenu"><property name="text"><string>On a window: arrange menu for the selection</string></property><property name="buddy"><cstring>kcfg_MouseContextMenu</cstring></property></widget></item>
      <item row="7" column="1"><widget class="QLineEdit" name="kcfg_MouseContextMenu"/></item>
-     <item row="3" column="0"><widget class="QLabel" name="label_MouseNewDesktopAt"><property name="text"><string>On a window outside every frame: new desktop there</string></property><property name="buddy"><cstring>kcfg_MouseNewDesktopAt</cstring></property></widget></item>
-     <item row="3" column="1"><widget class="QLineEdit" name="kcfg_MouseNewDesktopAt"/></item>
+     <item row="3" column="0"><widget class="QLabel" name="label_MouseNewActivityAt"><property name="text"><string>On a window outside every frame: new activity there</string></property><property name="buddy"><cstring>kcfg_MouseNewActivityAt</cstring></property></widget></item>
+     <item row="3" column="1"><widget class="QLineEdit" name="kcfg_MouseNewActivityAt"/></item>
     </layout></widget></item>
    <item><widget class="QGroupBox" name="group3"><property name="title"><string>Default global chords (rebind under Shortcuts > KWin)</string></property>
     <layout class="QFormLayout" name="form3">
      <item row="0" column="0"><widget class="QLabel" name="label_ToggleShortcut"><property name="text"><string>Open or close the canvas</string></property><property name="buddy"><cstring>kcfg_ToggleShortcut</cstring></property></widget></item>
      <item row="0" column="1"><widget class="QLineEdit" name="kcfg_ToggleShortcut"/></item>
-     <item row="1" column="0"><widget class="QLabel" name="label_HomeShortcut"><property name="text"><string>Return this desktop to the origin</string></property><property name="buddy"><cstring>kcfg_HomeShortcut</cstring></property></widget></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_HomeShortcut"><property name="text"><string>Return this activity to the origin</string></property><property name="buddy"><cstring>kcfg_HomeShortcut</cstring></property></widget></item>
      <item row="1" column="1"><widget class="QLineEdit" name="kcfg_HomeShortcut"/></item>
     </layout></widget></item>
    <item><widget class="QGroupBox" name="group4"><property name="title"><string>Ground</string></property>

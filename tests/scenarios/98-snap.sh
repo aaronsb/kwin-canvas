@@ -18,7 +18,7 @@ run_scenario() {
     c "drag $w 3 3"
     assert_eq "grid snapped x" "$(eget sample.txt x)" 1024
     assert_eq "grid snapped y" "$(eget sample.txt y)" 512
-    # Frames snap too: desktop 2's group dragged near KWrite's right edge.
+    # Frames snap too: Activity 2's group dragged near KWrite's right edge.
     c "snap grid off"; c "snap edges on"
     c "placeby sample.txt 2200 100"
     c state

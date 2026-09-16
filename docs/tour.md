@@ -15,10 +15,10 @@ this state alone until you open it.
 
 Meta+Space, or the hot corner. The canvas opens zoomed to fit everything:
 the ground grid with its coordinate labels, one group of monitor frames per
-virtual desktop showing that desktop's wallpaper, and every window as a live
-thumbnail where it sits on the plane. Here Gwenview lives in Desktop 2 and
-KCalc floats on the plane outside every frame. The toolbar on the primary
-display shows the current desktop and zoom.
+activity, and every window as a live thumbnail where it sits on the plane.
+Here Gwenview lives in Activity 2 and KCalc floats on the plane outside
+every frame. The toolbar on the primary display shows the current activity,
+the zoom, and a swatch per activity.
 
 ![The canvas, zoomed to fit](images/02-hero.png)
 
@@ -46,20 +46,20 @@ thumbnail follows. KWrite here has just been told to be 1000 by 700.
 
 ![Resizing KWrite](images/05-resize.png)
 
-## Desktops are frames on the plane
+## Activities are frames on the plane
 
-A third desktop, added from a frame tag's plus button, gets its frames laid
+A third activity, added from a frame tag's plus button, gets its frames laid
 out beside the others. Drag any window into a frame and apply: it moves to
-that desktop, at that spot. Dolphin is about to become a Desktop 3 window.
+that activity, at that spot. Dolphin is about to become an Activity 3 window.
 
-![Three desktops](images/06-three-desktops.png)
+![Three activities](images/06-three-activities.png)
 
 ## Apply, then switch
 
-After apply, switching to Desktop 2 at 1:1 shows exactly what its frame
-held: Gwenview, where the frame had it.
+After apply, switching to Activity 2 at 1:1 shows exactly what its frame
+held: Gwenview, where the frame had it, on that activity's own wallpaper.
 
-![Desktop 2 at 1:1](images/07-desktop-2.png)
+![Activity 2 at 1:1](images/07-activity-2.png)
 
 ## The toolbar goes where you want it
 

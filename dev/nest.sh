@@ -24,6 +24,9 @@
 #
 # NEST_NAME=foo runs a second, independent nest (own socket, bus, config, log).
 # NEST_WALLPAPER=0 keeps the plain grid instead of tiling the fixture wallpaper.
+# NEST_OUTPUTS=2 gives the nest two side-by-side outputs (one frame each).
+# The nest has its own activity manager with two seeded activities, so the
+# frame groups and the send-to menu have something to show.
 # The file is sourceable: `source dev/nest.sh` exposes every function without
 # running a command, which is how tests/lib.sh reuses it.
 #
@@ -38,8 +41,12 @@ CONF=$STATE/config
 SOCKET=wayland-$NEST_NAME
 WIDTH=${NEST_WIDTH:-1920}
 HEIGHT=${NEST_HEIGHT:-1080}
+OUTPUTS=${NEST_OUTPUTS:-1}
 LOG=$STATE/kwin.log
 FIXTURES=$HERE/tests/fixtures
+# Fixed ids for the two seeded activities, so tests can name them.
+ACT1=11111111-1111-4111-8111-111111111111
+ACT2=22222222-2222-4222-8222-222222222222
 
 bus() { cat "$STATE/bus" 2>/dev/null; }
 nq() { DBUS_SESSION_BUS_ADDRESS=$(bus) qdbus6 "$@"; }
@@ -77,6 +84,19 @@ Backend=OpenGL
 Number=2
 Rows=1
 CFG
+    # The nest's activity manager reads these; the state file (XDG_STATE_HOME)
+    # names the current one. Rewritten on every up, so an added activity
+    # never lingers.
+    cat > "$CONF/kactivitymanagerdrc" <<CFG
+[activities]
+$ACT1=Activity 1
+$ACT2=Activity 2
+CFG
+    mkdir -p "$STATE/state"
+    cat > "$STATE/state/kactivitymanagerdstaterc" <<CFG
+[main]
+currentActivity=$ACT1
+CFG
 }
 
 # plasmashell inside the nest, shaped through its scripting interface after it
@@ -95,20 +115,22 @@ shell() {
     [ "$ok" = 1 ] || { echo "plasmashell did not come up; see: dev/nest.sh log"; return 1; }
     local wp; wp=$(wallpaper_file 1)
     if [ -n "$wp" ]; then
-        # Stock image wallpaper: the frame interior is a real picture, and
-        # 1:1 is that picture. The ground grid lives in the effect only.
+        # Stock image wallpaper, one per activity in name order: the frame
+        # interior is a real picture, and 1:1 is that picture. The ground
+        # grid lives in the effect only.
         nq org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
             for (const p of panels()) p.remove();
-            let i = 0;
-            for (const d of desktops()) {
-                d.currentConfigGroup = ['General'];
-                d.writeConfig('url', 'file://$STATE/desktop');
-                d.wallpaperPlugin = 'org.kde.image';
-                d.currentConfigGroup = ['Wallpaper', 'org.kde.image', 'General'];
-                d.writeConfig('Image', 'file://$FIXTURES/wallpaper-' + ((i % 4) + 1) + '.png');
-                d.writeConfig('FillMode', 2);
-                d.reloadConfig();
-                i++;
+            const ids = activities().slice().sort(function (a, b) { return activityName(a) < activityName(b) ? -1 : 1; });
+            for (let i = 0; i < ids.length; ++i) {
+                for (const d of desktopsForActivity(ids[i])) {
+                    d.currentConfigGroup = ['General'];
+                    d.writeConfig('url', 'file://$STATE/desktop');
+                    d.wallpaperPlugin = 'org.kde.image';
+                    d.currentConfigGroup = ['Wallpaper', 'org.kde.image', 'General'];
+                    d.writeConfig('Image', 'file://$FIXTURES/wallpaper-' + ((i % 4) + 1) + '.png');
+                    d.writeConfig('FillMode', 2);
+                    d.reloadConfig();
+                }
             }" >/dev/null
     else
         nq org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
@@ -132,14 +154,16 @@ up() {
     seed_config
     # setsid: the nest gets its own session so nothing that happens to the
     # shell or make that started it can reap it. The pid recorded is
-    # dbus-run-session's, written from inside as its child's $PPID.
+    # dbus-run-session's, written from inside as its child's $PPID. The
+    # environment goes on dbus-run-session itself, so the daemons the bus
+    # activates (the activity manager above all) read the nest's config.
     (
         cd "$STATE"
-        setsid -f dbus-run-session -- bash -c '
+        setsid -f env XDG_CONFIG_HOME="$STATE/config" XDG_STATE_HOME="$STATE/state" QT_LOGGING_TO_CONSOLE=1 KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
+            dbus-run-session -- bash -c '
             echo "$PPID" > "$0/pid"
             echo "$DBUS_SESSION_BUS_ADDRESS" > "$0/bus"
-            exec env XDG_CONFIG_HOME="$0/config" QT_LOGGING_TO_CONSOLE=1 KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
-                kwin_wayland --width '"$WIDTH"' --height '"$HEIGHT"' --xwayland --no-lockscreen --no-kactivities --socket '"$SOCKET"'
+            exec kwin_wayland --width '"$WIDTH"' --height '"$HEIGHT"' --output-count '"$OUTPUTS"' --xwayland --no-lockscreen --socket '"$SOCKET"'
         ' "$STATE" > "$LOG" 2>&1
     )
     for _ in $(seq 1 50); do
@@ -187,11 +211,19 @@ down() {
 # that is neither the live session bus nor a running nest's bus.
 clean() {
     local live=${DBUS_SESSION_BUS_ADDRESS:-} keep="" f p addr n=0
+    # A bus file whose nest is gone is a leftover too.
     for f in "${XDG_RUNTIME_DIR:-/tmp}"/kwin-canvas-nest-*/bus; do
-        [ -f "$f" ] && keep="$keep $(cat "$f")"
+        [ -f "$f" ] || continue
+        local d; d=$(dirname "$f")
+        if [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+            keep="$keep $(cat "$f")"
+        else
+            rm -f "$f" "$d/pid"
+        fi
     done
     for p in /proc/[0-9]*; do
-        addr=$(cat "$p/environ" 2>/dev/null | tr '\0' '\n' | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+        # Unreadable environs (other users' processes) must not end the sweep under set -e.
+        addr=$({ cat "$p/environ" 2>/dev/null || true; } | tr '\0' '\n' | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
         [ -n "$addr" ] || continue
         [ "$addr" = "$live" ] && continue
         case "$addr" in unix:path=/tmp/dbus-*|unix:abstract=/tmp/dbus-*) ;; *) continue ;; esac
@@ -210,7 +242,7 @@ clean() {
 
 run() {
     alive || { echo "not up"; exit 1; }
-    ( export WAYLAND_DISPLAY=$SOCKET DBUS_SESSION_BUS_ADDRESS=$(bus) XDG_CONFIG_HOME=$CONF; unset DISPLAY; "$@" >/dev/null 2>&1 & echo $! >> "$STATE/clients" )
+    ( export WAYLAND_DISPLAY=$SOCKET DBUS_SESSION_BUS_ADDRESS=$(bus) XDG_CONFIG_HOME=$CONF XDG_STATE_HOME=$STATE/state; unset DISPLAY; "$@" >/dev/null 2>&1 & echo $! >> "$STATE/clients" )
     echo "launched: $*"
 }
 
