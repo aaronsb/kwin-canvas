@@ -37,8 +37,8 @@ Full walkthrough in [docs/install.md](docs/install.md). Short version, from a
 release tarball with no checkout:
 
 ```bash
-kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.0.kwineffect.tar.gz
-kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.0.tar.gz
+kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.1.kwineffect.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.1.tar.gz
 ```
 
 then enable **Canvas** in System Settings → Desktop Effects. From a checkout:

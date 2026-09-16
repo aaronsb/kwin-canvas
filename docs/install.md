@@ -22,13 +22,13 @@ to focus it. `make nest-down` closes it.
 
 ### From the release tarballs
 
-1. Download `kwin-canvas-0.1.0.kwineffect.tar.gz` from
+1. Download `kwin-canvas-0.1.1.kwineffect.tar.gz` from
    https://github.com/aaronsb/kwin-canvas/releases/latest.
    The wallpaper tarball is optional; see "The ground wallpaper" below.
 2. Install the effect as a user package:
 
    ```bash
-   kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.0.kwineffect.tar.gz
+   kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.1.kwineffect.tar.gz
    ```
 
    To update later, replace `--install` with `--upgrade`.
@@ -80,13 +80,13 @@ grid at 1:1 and scrolls it as you pan, so the desktop itself shows where you
 are on the plane. Install it and pick **Canvas Ground** in Desktop Settings:
 
 ```bash
-kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.0.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.1.tar.gz
 ```
 
 Without it, your normal wallpaper stays, and the frames in the canvas show
 it.
 
-## Known limits in 0.1.0
+## Known limits in 0.1.1
 
 - No interaction with windows while zoomed out; the canvas is for arranging
   and navigating, work happens at 1:1.

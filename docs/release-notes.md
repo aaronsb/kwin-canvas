@@ -1,3 +1,7 @@
+0.1.1 adds the Plasma toolbar on the primary display (position and shape
+settings, help panel, settings menu), double-click gestures with named,
+rebindable actions, hot-corner activation, and the install guide.
+
 First cut. An infinite canvas for KDE Plasma as a KWin QML effect, on the
 public scripting API with no patches.
 
@@ -14,8 +18,8 @@ public scripting API with no patches.
 Install:
 
 ```
-kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.0.kwineffect.tar.gz
-kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.0.tar.gz
+kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.1.kwineffect.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.1.1.tar.gz
 ```
 
 then enable "Canvas" in System Settings → Desktop Effects. Tested on
