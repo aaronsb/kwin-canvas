@@ -164,9 +164,13 @@ KWin.SceneEffect {
     }
 
     // Move a window on the canvas by a screen-space delta while the canvas is open.
-    function dragEntry(entry, dx, dy) {
-        entry.x += dx / zoom;
-        entry.y += dy / zoom;
+    // Entries are addressed by index: the Repeater hands delegates a copy of the
+    // element, so mutating modelData would never reach the committed table.
+    function dragEntry(index, dx, dy) {
+        const e = entries[index];
+        if (!e) return;
+        e.x += dx / zoom;
+        e.y += dy / zoom;
         revision++;
     }
 
@@ -262,6 +266,7 @@ KWin.SceneEffect {
             break;
         }
         case "shift": shiftAll(Number(a[1]), Number(a[2])); break;
+        case "drag": dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
         case "activate": {
             const all = KWin.Workspace.stackingOrder;
             for (let i = 0; i < all.length; ++i) {
@@ -356,20 +361,20 @@ KWin.SceneEffect {
         }
 
         Repeater {
-            model: effect.entries
+            model: effect.entries.length
             delegate: Item {
                 id: thumb
-                required property var modelData
                 required property int index
-                x: { effect.revision; return (modelData.x - effect.viewX) * effect.zoom - view.sg.x; }
-                y: { effect.revision; return (modelData.y - effect.viewY) * effect.zoom - view.sg.y; }
-                width: modelData.width * effect.zoom
-                height: modelData.height * effect.zoom
+                readonly property var entry: { effect.revision; return effect.entries[index]; }
+                x: (entry.x - effect.viewX) * effect.zoom - view.sg.x
+                y: (entry.y - effect.viewY) * effect.zoom - view.sg.y
+                width: entry.width * effect.zoom
+                height: entry.height * effect.zoom
                 z: index
 
                 KWin.WindowThumbnail {
                     anchors.fill: parent
-                    client: thumb.modelData.window
+                    client: thumb.entry.window
                 }
 
                 Rectangle {
@@ -383,7 +388,7 @@ KWin.SceneEffect {
                     anchors.left: parent.left
                     anchors.bottom: parent.top
                     anchors.bottomMargin: 2
-                    text: thumb.modelData.window.caption
+                    text: thumb.entry.window.caption
                     color: "#ffffff"
                     font.pixelSize: 12
                     visible: effect.zoom < 0.6 || hover.hovered
@@ -401,14 +406,14 @@ KWin.SceneEffect {
                     onActiveChanged: last = Qt.point(0, 0)
                     onActiveTranslationChanged: {
                         const t = activeTranslation;
-                        effect.dragEntry(thumb.modelData, t.x - last.x, t.y - last.y);
+                        effect.dragEntry(thumb.index, t.x - last.x, t.y - last.y);
                         last = t;
                     }
                 }
 
                 TapHandler {
                     acceptedButtons: Qt.LeftButton
-                    onTapped: effect.pick(thumb.modelData)
+                    onTapped: effect.pick(thumb.entry)
                 }
             }
         }
