@@ -9,7 +9,7 @@ pkgdesc="Infinite canvas for KDE Plasma: windows on one pannable plane, activiti
 arch=('any')
 url="https://github.com/aaronsb/kwin-canvas"
 license=('GPL-2.0-or-later')
-depends=('kwin' 'plasma-workspace' 'kpackage')
+depends=('kwin' 'plasma-workspace')
 makedepends=('make')
 optdepends=('plasma-activities: one frame group per activity'
             'qt6-tools: qdbus6 for make enable and make status')

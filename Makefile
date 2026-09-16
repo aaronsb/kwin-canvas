@@ -16,7 +16,7 @@ PYTHON      := python3
 .DEFAULT_GOAL := help
 .PHONY: help deps deps-install install uninstall install-system uninstall-system reload enable disable status \
         tools fixtures play nest nest-down nest-clients nest-fixtures nest-reload nest-shot nest-log nest-clean nest-cmd \
-        test golden demo video clean stage dist pkgbuild release tour
+        test golden demo video clean stage dist pkgbuild aur release tour
 
 help: ## Show this help
 	@echo "kwin-canvas"
@@ -169,6 +169,18 @@ pkgbuild: ## Write dist/PKGBUILD for the AUR from packaging/PKGBUILD.in at this 
 	sed 's/@VERSION@/$(VERSION)/g' packaging/PKGBUILD.in > $(DIST)/PKGBUILD
 	cp packaging/kwin-canvas.install $(DIST)/kwin-canvas.install
 	@echo "dist/PKGBUILD written; after the v$(VERSION) tag is on GitHub: cd $(DIST) && updpkgsums && makepkg -si"
+
+# The AUR repository is a git remote of its own; the package there is the
+# generated PKGBUILD, its install file and .SRCINFO, with checksums taken
+# from the GitHub tag tarball, so `make release` comes first.
+AUR_DIR := $(BUILD)/aur
+aur: pkgbuild ## Publish or update the AUR package from the v$(VERSION) tag (run after make release)
+	@[ -d $(AUR_DIR)/.git ] || git clone -q ssh://aur@aur.archlinux.org/kwin-canvas.git $(AUR_DIR)
+	@cd $(AUR_DIR) && git pull -q --rebase 2>/dev/null || true
+	cp $(DIST)/PKGBUILD $(DIST)/kwin-canvas.install $(AUR_DIR)/
+	cd $(AUR_DIR) && updpkgsums && makepkg --printsrcinfo > .SRCINFO
+	cd $(AUR_DIR) && git add PKGBUILD kwin-canvas.install .SRCINFO && git commit -q -m "kwin-canvas $(VERSION)" && git push -q origin HEAD:master
+	@echo "published: https://aur.archlinux.org/packages/kwin-canvas"
 
 release: dist ## Tag v$(VERSION) and publish a GitHub release with the tarballs (needs a clean tree)
 	@git diff --quiet || { echo "uncommitted changes"; exit 1; }
