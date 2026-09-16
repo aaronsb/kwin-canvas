@@ -33,7 +33,8 @@ you zoom out, so the plane has landmarks and the zoom has something to anchor.
 
 ## Install
 
-From a release tarball, no checkout needed:
+Full walkthrough in [docs/install.md](docs/install.md). Short version, from a
+release tarball with no checkout:
 
 ```bash
 kpackagetool6 --type KWin/Effect --install kwin-canvas-0.1.0.kwineffect.tar.gz
@@ -90,7 +91,11 @@ Everything above is reassignable the KDE way:
   ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
 - **Screen edges** are assigned on the Screen Edges page.
 
-The legend inside the canvas is built from the same entries.
+The toolbar inside the canvas sits on the primary display, at any edge or
+corner (`HudPosition`), horizontal, vertical or square (`HudShape`, default
+auto: square in a corner, vertical on a side, horizontal top or bottom). It
+offers the same actions, a help panel built from the same entries, and a menu
+into those settings pages.
 
 ## Develop
 

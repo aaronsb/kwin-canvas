@@ -173,6 +173,17 @@ top-left at 7, the same order as `ScreenEdgeHandler.Edge`). The effect
 instantiates one `ScreenEdgeHandler` per number and toggles on activation.
 `TouchBorderActivate` does the same for touch edges.
 
+## HUD
+
+A Plasma toolbar (`org.kde.plasma.components`, Kirigami theme colours) on
+the primary display only, which is the first output in
+`Workspace.screenOrder`, the order plasmashell sets. `HudPosition` picks an
+edge or corner, and `HudShape` the flow: one `GridLayout` whose flow, rows
+and columns follow the shape, with the label spanning the square's width and
+the separators hidden there. It shows the current desktop and zoom, the camera and apply
+actions, a help panel rendered from the binding config, and a menu that opens
+the settings pages through `KCMLauncher.openSystemSettings`, as Overview does.
+
 ## Known limits
 
 - **No interaction while zoomed.** The canvas is a navigation mode. This is

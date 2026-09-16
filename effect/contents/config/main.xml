@@ -43,6 +43,14 @@
             <label>Touch screen edges that open the canvas.</label>
             <default></default>
         </entry>
+        <entry name="HudPosition" type="String">
+            <label>Where the toolbar sits on the primary display: Top, TopLeft, TopRight, Bottom, BottomLeft, BottomRight, Left, Right.</label>
+            <default>Top</default>
+        </entry>
+        <entry name="HudShape" type="String">
+            <label>Toolbar shape: auto (square in a corner, horizontal on the top or bottom edge, vertical on a side), or horizontal, vertical, square.</label>
+            <default>auto</default>
+        </entry>
         <entry name="OpenZoom" type="String">
             <label>View when the canvas opens: "fit" zooms to every window and frame, "1" stays at 1:1, any other number is a zoom anchored at the screen centre.</label>
             <default>fit</default>

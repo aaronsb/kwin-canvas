@@ -33,8 +33,11 @@
     While the canvas is closed, view == target(current desktop).
 */
 import QtQuick
+import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.kcmutils as KCM
 import org.kde.kwin as KWin
+import org.kde.plasma.components as PC3
 
 KWin.SceneEffect {
     id: effect
@@ -126,6 +129,9 @@ KWin.SceneEffect {
     function keyLabel(spec) {
         return String(spec || "").split(",").map(function (n) { return n.trim().toLowerCase(); }).join("/");
     }
+
+    // The primary display: first in the order plasmashell set, else the first screen.
+    readonly property var primaryScreen: KWin.Workspace.screenOrder.length > 0 ? KWin.Workspace.screenOrder[0] : KWin.Workspace.screens[0]
 
     readonly property real zoomMin: configuration.ZoomMin
     readonly property real zoomStep: configuration.ZoomStep
@@ -1209,35 +1215,151 @@ KWin.SceneEffect {
             }
         }
 
-        // HUD
+        // HUD: a Plasma toolbar, top centre. Camera state, the actions, help
+        // with the bindings, and the settings pages that own them.
+        Rectangle {
+            id: hud
+            z: 100000
+            visible: KWin.SceneView.screen === effect.primaryScreen
+            readonly property string pos: String(effect.configuration.HudPosition || "Top").toLowerCase()
+            readonly property bool atTop: pos.indexOf("top") === 0 || pos === "left" || pos === "right" ? pos.indexOf("bottom") !== 0 : false
+            readonly property bool atBottom: pos.indexOf("bottom") === 0
+            readonly property bool atLeft: pos === "left" || pos === "topleft" || pos === "bottomleft"
+            readonly property bool atRight: pos === "right" || pos === "topright" || pos === "bottomright"
+            readonly property bool centredV: pos === "left" || pos === "right"
+            readonly property bool inCorner: pos === "topleft" || pos === "topright" || pos === "bottomleft" || pos === "bottomright"
+            // Shape: auto follows the position (square in a corner, vertical on
+            // a side, horizontal on the top or bottom), or forced by config.
+            readonly property string shape: {
+                const want = String(effect.configuration.HudShape || "auto").toLowerCase();
+                if (want === "horizontal" || want === "vertical" || want === "square") return want;
+                return inCorner ? "square" : (centredV ? "vertical" : "horizontal");
+            }
+            readonly property bool vertical: shape === "vertical"
+            readonly property bool square: shape === "square"
+            readonly property int squareColumns: 4
+            anchors.top: atBottom || centredV ? undefined : parent.top
+            anchors.bottom: atBottom ? parent.bottom : undefined
+            anchors.verticalCenter: centredV ? parent.verticalCenter : undefined
+            anchors.left: atLeft ? parent.left : undefined
+            anchors.right: atRight ? parent.right : undefined
+            anchors.horizontalCenter: !atLeft && !atRight ? parent.horizontalCenter : undefined
+            anchors.margins: Kirigami.Units.largeSpacing
+            width: hudRow.implicitWidth + Kirigami.Units.largeSpacing * 2
+            height: hudRow.implicitHeight + Kirigami.Units.smallSpacing * 2
+            radius: Kirigami.Units.cornerRadius
+            color: Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.85)
+            border.width: 1
+            border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
+            Kirigami.Theme.inherit: false
+            Kirigami.Theme.colorSet: Kirigami.Theme.Window
+
+            HoverHandler {
+                onHoveredChanged: view.hoverCount += hovered ? 1 : -1
+                Component.onDestruction: if (hovered) view.hoverCount -= 1
+            }
+
+            GridLayout {
+                id: hudRow
+                anchors.centerIn: parent
+                flow: hud.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+                rows: hud.vertical ? -1 : (hud.square ? -1 : 1)
+                columns: hud.vertical ? 1 : (hud.square ? hud.squareColumns : -1)
+                rowSpacing: Kirigami.Units.smallSpacing
+                columnSpacing: Kirigami.Units.smallSpacing
+
+                // Separators only in the linear shapes; a square reads as rows.
+                component Sep : Kirigami.Separator {
+                    visible: !hud.square
+                    Layout.fillHeight: !hud.vertical
+                    Layout.fillWidth: hud.vertical
+                    Layout.margins: Kirigami.Units.smallSpacing
+                }
+
+                Kirigami.Icon {
+                    visible: !hud.square
+                    source: "virtual-desktops"
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                    Layout.alignment: Qt.AlignCenter
+                }
+                PC3.Label {
+                    text: hud.vertical ? KWin.Workspace.currentDesktop.name + "\n" + Math.round(effect.zoom * 100) + "%"
+                                       : KWin.Workspace.currentDesktop.name + "   " + Math.round(effect.zoom * 100) + "%"
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.alignment: Qt.AlignCenter
+                    Layout.columnSpan: hud.square ? hud.squareColumns : 1
+                    Layout.rightMargin: hud.vertical || hud.square ? 0 : Kirigami.Units.smallSpacing
+                }
+                PC3.ToolButton { icon.name: "zoom-fit-best";   text: "Fit";    display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom to fit (" + effect.keyLabel(effect.configuration.KeyFit) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.zoomExtents() }
+                PC3.ToolButton { icon.name: "go-home";         text: "Home";   display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Look through this desktop's frames (" + effect.keyLabel(effect.configuration.KeyHome) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.home() }
+                PC3.ToolButton { icon.name: "zoom-in";         text: "In";     display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom in (" + effect.keyLabel(effect.configuration.KeyZoomIn) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom * effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
+                PC3.ToolButton { icon.name: "zoom-out";        text: "Out";    display: PC3.AbstractButton.IconOnly; PC3.ToolTip.text: "Zoom out (" + effect.keyLabel(effect.configuration.KeyZoomOut) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.setZoom(effect.zoom / effect.zoomStep, Qt.point(view.sg.x + view.sg.width / 2, view.sg.y + view.sg.height / 2)) }
+                Sep {}
+                PC3.ToolButton { icon.name: "dialog-ok-apply"; text: "Apply";  display: hud.vertical || hud.square ? PC3.AbstractButton.IconOnly : PC3.AbstractButton.TextBesideIcon; PC3.ToolTip.text: "Apply and close (" + effect.keyLabel(effect.configuration.KeyApply) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.commit(null) }
+                PC3.ToolButton { icon.name: "dialog-cancel";   text: "Cancel"; display: hud.vertical || hud.square ? PC3.AbstractButton.IconOnly : PC3.AbstractButton.TextBesideIcon; PC3.ToolTip.text: "Close without changes (" + effect.keyLabel(effect.configuration.KeyCancel) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.cancel() }
+                Sep {}
+                PC3.ToolButton { id: helpButton; icon.name: "help-contextual"; text: "Help"; display: PC3.AbstractButton.IconOnly; checkable: true; PC3.ToolTip.text: "Controls"; PC3.ToolTip.visible: hovered }
+                PC3.ToolButton {
+                    icon.name: "configure"; text: "Settings"; display: PC3.AbstractButton.IconOnly
+                    PC3.ToolTip.text: "Settings"; PC3.ToolTip.visible: hovered
+                    onClicked: settingsMenu.open()
+                    PC3.Menu {
+                        id: settingsMenu
+                        x: hud.vertical ? (hud.atRight ? -width : parent.width) : 0
+                        y: hud.vertical ? 0 : parent.height
+                        PC3.MenuItem { text: "Effect settings…";  icon.name: "preferences-desktop-effects"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_kwin_effects") }
+                        PC3.MenuItem { text: "Shortcuts…";        icon.name: "preferences-desktop-keyboard"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_keys") }
+                        PC3.MenuItem { text: "Screen edges…";     icon.name: "preferences-desktop-screen-edges"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_kwinscreenedges") }
+                        PC3.MenuItem { text: "Virtual desktops…"; icon.name: "virtual-desktops"; onTriggered: KCM.KCMLauncher.openSystemSettings("kcm_kwin_virtualdesktops") }
+                    }
+                }
+            }
+        }
+
+        // Help: the bindings, read from the same config the actions use.
         Rectangle {
             z: 100000
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.margins: 12
-            width: hud.implicitWidth + 16
-            height: hud.implicitHeight + 10
-            radius: 6
-            color: "#a0000000"
-            Text {
-                id: hud
+            visible: helpButton.checked && hud.visible
+            anchors.top: hud.vertical ? hud.top : (hud.atBottom ? undefined : hud.bottom)
+            anchors.bottom: !hud.vertical && hud.atBottom ? hud.top : undefined
+            anchors.left: hud.vertical ? (hud.atLeft ? hud.right : undefined) : (hud.atLeft ? hud.left : undefined)
+            anchors.right: hud.vertical ? (hud.atRight ? hud.left : undefined) : (hud.atRight ? hud.right : undefined)
+            anchors.horizontalCenter: !hud.vertical && !hud.atLeft && !hud.atRight ? hud.horizontalCenter : undefined
+            anchors.margins: Kirigami.Units.smallSpacing
+            width: helpGrid.implicitWidth + Kirigami.Units.largeSpacing * 2
+            height: helpGrid.implicitHeight + Kirigami.Units.largeSpacing * 2
+            radius: Kirigami.Units.cornerRadius
+            color: Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g, Kirigami.Theme.backgroundColor.b, 0.92)
+            border.width: 1
+            border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
+            Kirigami.Theme.inherit: false
+            Kirigami.Theme.colorSet: Kirigami.Theme.Window
+            HoverHandler {
+                onHoveredChanged: view.hoverCount += hovered ? 1 : -1
+                Component.onDestruction: if (hovered) view.hoverCount -= 1
+            }
+            GridLayout {
+                id: helpGrid
                 anchors.centerIn: parent
-                color: "#ffffff"
-                font.pixelSize: 13
-                font.family: "monospace"
-                text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY)
-                    + "   desktop " + KWin.Workspace.currentDesktop.name
-                    + "\ndrag ground or " + effect.keyLabel(effect.configuration.KeyPan) + "+drag: pan   wheel or "
-                    + effect.keyLabel(effect.configuration.KeyZoomIn) + " " + effect.keyLabel(effect.configuration.KeyZoomOut) + ": zoom"
-                    + "   drag window: move   drag window edge: resize   drag frame tag/edge: move that desktop's screens"
-                    + "\n" + effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window: focus it   "
-                    + effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame: go to that desktop   "
-                    + effect.gestureLabel(effect.configuration.MouseNewDesktopAt) + " window outside frames: new desktop there"
-                    + "\n" + effect.keyLabel(effect.configuration.KeyApply) + ": apply   "
-                    + effect.keyLabel(effect.configuration.KeyCancel) + ": cancel   "
-                    + effect.keyLabel(effect.configuration.KeyHome) + ": look through frames   "
-                    + effect.keyLabel(effect.configuration.KeyOrigin) + ": origin   "
-                    + effect.keyLabel(effect.configuration.KeyFit) + ": fit"
+                columns: 2
+                columnSpacing: Kirigami.Units.largeSpacing
+                rowSpacing: Kirigami.Units.smallSpacing
+                component K : PC3.Label { font.family: "monospace"; opacity: 0.85 }
+                component V : PC3.Label {}
+                K { text: "drag ground / " + effect.keyLabel(effect.configuration.KeyPan) + "+drag / middle-drag" } V { text: "pan" }
+                K { text: "wheel / " + effect.keyLabel(effect.configuration.KeyZoomIn) + " / " + effect.keyLabel(effect.configuration.KeyZoomOut) } V { text: "zoom at the cursor" }
+                K { text: "drag window" }                                       V { text: "move it on the plane" }
+                K { text: "drag window edge or corner" }                        V { text: "resize it" }
+                K { text: "drag frame tag or edge" }                            V { text: "move that desktop's screens" }
+                K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: "apply, focused on it" }
+                K { text: effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame" }    V { text: "apply with that desktop current" }
+                K { text: effect.gestureLabel(effect.configuration.MouseNewDesktopAt) + " window outside frames" } V { text: "new desktop centred on it" }
+                K { text: effect.keyLabel(effect.configuration.KeyApply) }      V { text: "apply and close" }
+                K { text: effect.keyLabel(effect.configuration.KeyCancel) }     V { text: "cancel" }
+                K { text: effect.keyLabel(effect.configuration.KeyHome) }       V { text: "look through this desktop's frames" }
+                K { text: effect.keyLabel(effect.configuration.KeyOrigin) }     V { text: "camera to the canvas origin" }
+                K { text: effect.keyLabel(effect.configuration.KeyFit) }        V { text: "zoom to fit" }
             }
         }
     }

@@ -9,6 +9,10 @@
     <layout class="QFormLayout" name="form0">
      <item row="0" column="0"><widget class="QLabel" name="label_OpenZoom"><property name="text"><string>View when opened (fit, 1, or a zoom like 0.5)</string></property><property name="buddy"><cstring>kcfg_OpenZoom</cstring></property></widget></item>
      <item row="0" column="1"><widget class="QLineEdit" name="kcfg_OpenZoom"/></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_HudPosition"><property name="text"><string>Toolbar position on the primary display</string></property><property name="buddy"><cstring>kcfg_HudPosition</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_HudPosition"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="label_HudShape"><property name="text"><string>Toolbar shape (auto, horizontal, vertical, square)</string></property><property name="buddy"><cstring>kcfg_HudShape</cstring></property></widget></item>
+     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_HudShape"/></item>
     </layout></widget></item>
    <item><widget class="QGroupBox" name="group1"><property name="title"><string>Keys inside the canvas (Qt key names, comma separated)</string></property>
     <layout class="QFormLayout" name="form1">
