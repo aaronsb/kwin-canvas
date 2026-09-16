@@ -70,7 +70,8 @@ comes on screen.
 
 ```bash
 make deps             # check tools; make deps-install fetches what is missing
-make nest             # nested KWin with the effect and plasmashell inside, on its own D-Bus bus
+make play             # nest with the five fixture apps arranged and the canvas open
+make nest             # the bare nest: KWin with the effect and plasmashell inside, own D-Bus bus
 make nest-fixtures    # kcalc, kwrite, konsole, dolphin, gwenview on fixture files
 make nest-cmd CMD=open           # drive the effect without a mouse
 make nest-cmd CMD="zoom 0.4 960 540"

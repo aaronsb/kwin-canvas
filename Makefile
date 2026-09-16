@@ -11,7 +11,7 @@ PYTHON      := python3
 
 .DEFAULT_GOAL := help
 .PHONY: help deps deps-install install uninstall reload enable disable status \
-        tools fixtures nest nest-down nest-clients nest-fixtures nest-reload nest-shot nest-log nest-clean nest-cmd \
+        tools fixtures play nest nest-down nest-clients nest-fixtures nest-reload nest-shot nest-log nest-clean nest-cmd \
         test golden demo video clean stage
 
 help: ## Show this help
@@ -77,6 +77,9 @@ nest: ## Start the nested KWin with the effect and plasmashell inside (own D-Bus
 	@echo "Next:  make nest-fixtures          windows to play with"
 	@echo "       make nest-cmd CMD=open      open the canvas (or Ctrl+Alt+Space inside the window)"
 	@echo "       make nest-down              stop it"
+
+play: install fixtures ## Nest with the fixture apps arranged and the canvas open (make play ARGS=--closed for 1:1)
+	dev/play.sh $(ARGS)
 
 nest-down: ## Stop the nested KWin
 	$(NEST) down

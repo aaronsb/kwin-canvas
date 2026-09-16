@@ -20,7 +20,9 @@ log. Tests use `test`, the demo uses `demo`, and the default is `kwincanvas`.
 `NEST_SHELL=0` skips plasmashell.
 
 ```bash
-make nest                       # up
+make play                       # up, fixture apps arranged, canvas open and fitted
+make play ARGS=--closed         # same, canvas closed at 1:1
+make nest                       # up, empty
 make nest-fixtures              # kcalc kwrite konsole dolphin gwenview on fixture files
 make nest-clients               # or the plain trio: kcalc konsole kwrite
 make nest-cmd CMD=open          # a debug command
