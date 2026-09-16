@@ -37,10 +37,12 @@
     <layout class="QFormLayout" name="form2">
      <item row="0" column="0"><widget class="QLabel" name="label_MouseFocusWindow"><property name="text"><string>On a window: apply focused on it</string></property><property name="buddy"><cstring>kcfg_MouseFocusWindow</cstring></property></widget></item>
      <item row="0" column="1"><widget class="QLineEdit" name="kcfg_MouseFocusWindow"/></item>
-     <item row="1" column="0"><widget class="QLabel" name="label_MouseGotoDesktop"><property name="text"><string>On a frame: go to that desktop</string></property><property name="buddy"><cstring>kcfg_MouseGotoDesktop</cstring></property></widget></item>
-     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_MouseGotoDesktop"/></item>
-     <item row="2" column="0"><widget class="QLabel" name="label_MouseNewDesktopAt"><property name="text"><string>On a window outside every frame: new desktop there</string></property><property name="buddy"><cstring>kcfg_MouseNewDesktopAt</cstring></property></widget></item>
-     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_MouseNewDesktopAt"/></item>
+     <item row="1" column="0"><widget class="QLabel" name="label_MouseZoomToDesktop"><property name="text"><string>On a frame: zoom to that desktop</string></property><property name="buddy"><cstring>kcfg_MouseZoomToDesktop</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="kcfg_MouseZoomToDesktop"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="label_MouseGotoDesktop"><property name="text"><string>On a frame: apply with that desktop current</string></property><property name="buddy"><cstring>kcfg_MouseGotoDesktop</cstring></property></widget></item>
+     <item row="2" column="1"><widget class="QLineEdit" name="kcfg_MouseGotoDesktop"/></item>
+     <item row="3" column="0"><widget class="QLabel" name="label_MouseNewDesktopAt"><property name="text"><string>On a window outside every frame: new desktop there</string></property><property name="buddy"><cstring>kcfg_MouseNewDesktopAt</cstring></property></widget></item>
+     <item row="3" column="1"><widget class="QLineEdit" name="kcfg_MouseNewDesktopAt"/></item>
     </layout></widget></item>
    <item><widget class="QGroupBox" name="group3"><property name="title"><string>Default global chords (rebind under Shortcuts > KWin)</string></property>
     <layout class="QFormLayout" name="form3">

@@ -57,6 +57,7 @@ KWin.SceneEffect {
     // Each entry: { window, desktop, x, y, width, height } in canvas units, bottom to top.
     property var entries: []
     property int revision: 0
+    property bool helpOpen: false
     property int lastDebugSeq: 0
 
     // ---- key bindings, from config ------------------------------------------
@@ -473,6 +474,19 @@ KWin.SceneEffect {
         commit(entry.window);
     }
 
+    // zoomToDesktop: camera fitted to that desktop's frames, canvas stays open.
+    function zoomToDesktop(d) {
+        const t = peekTarget(d);
+        const vs = KWin.Workspace.virtualScreenGeometry;
+        const l = t.x + vs.x, tp = t.y + vs.y, r = l + vs.width, b = tp + vs.height;
+        const sg = KWin.Workspace.activeScreen.geometry;
+        const pad = 60;
+        const z = Math.max(zoomMin, Math.min(1.0, Math.min((sg.width - 2 * pad) / (r - l), (sg.height - 2 * pad) / (b - tp))));
+        zoom = z;
+        viewX = (l + r) / 2 - (sg.x + sg.width / 2) / zoom;
+        viewY = (tp + b) / 2 - (sg.y + sg.height / 2) / zoom;
+    }
+
     // gotoDesktop: apply with that desktop current, frames where they are.
     function gotoDesktop(d) {
         KWin.Workspace.currentDesktop = d;
@@ -509,6 +523,7 @@ KWin.SceneEffect {
 
     function frameGesture(d, count, modifiers) {
         if (gestureMatches(configuration.MouseGotoDesktop, count, modifiers)) gotoDesktop(d);
+        else if (gestureMatches(configuration.MouseZoomToDesktop, count, modifiers)) zoomToDesktop(d);
     }
 
     function pick(entry) { focusWindow(entry); }
@@ -740,6 +755,7 @@ KWin.SceneEffect {
         case "pick": pick(entries[Number(a[1])]); break;
         case "focus": focusWindow(entries[Number(a[1])]); break;
         case "goto": gotoDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
+        case "zoomto": zoomToDesktop(KWin.Workspace.desktops[Number(a[1])]); break;
         case "newdesktopat": newDesktopAt(entries[Number(a[1])]); break;
         case "activate": {
             const all = KWin.Workspace.stackingOrder;
@@ -761,6 +777,7 @@ KWin.SceneEffect {
             console.log(s);
             break;
         }
+        case "help": helpOpen = !helpOpen; break;
         case "state": break;
         default: console.warn("kwin-canvas: unknown debug command", cmd);
         }
@@ -1299,7 +1316,7 @@ KWin.SceneEffect {
                 PC3.ToolButton { icon.name: "dialog-ok-apply"; text: "Apply";  display: hud.vertical || hud.square ? PC3.AbstractButton.IconOnly : PC3.AbstractButton.TextBesideIcon; PC3.ToolTip.text: "Apply and close (" + effect.keyLabel(effect.configuration.KeyApply) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.commit(null) }
                 PC3.ToolButton { icon.name: "dialog-cancel";   text: "Cancel"; display: hud.vertical || hud.square ? PC3.AbstractButton.IconOnly : PC3.AbstractButton.TextBesideIcon; PC3.ToolTip.text: "Close without changes (" + effect.keyLabel(effect.configuration.KeyCancel) + ")"; PC3.ToolTip.visible: hovered; onClicked: effect.cancel() }
                 Sep {}
-                PC3.ToolButton { id: helpButton; icon.name: "help-contextual"; text: "Help"; display: PC3.AbstractButton.IconOnly; checkable: true; PC3.ToolTip.text: "Controls"; PC3.ToolTip.visible: hovered }
+                PC3.ToolButton { id: helpButton; icon.name: "help-contextual"; text: "Help"; display: PC3.AbstractButton.IconOnly; checkable: true; checked: effect.helpOpen; onToggled: effect.helpOpen = checked; PC3.ToolTip.text: "Controls"; PC3.ToolTip.visible: hovered }
                 PC3.ToolButton {
                     icon.name: "configure"; text: "Settings"; display: PC3.AbstractButton.IconOnly
                     PC3.ToolTip.text: "Settings"; PC3.ToolTip.visible: hovered
@@ -1320,7 +1337,7 @@ KWin.SceneEffect {
         // Help: the bindings, read from the same config the actions use.
         Rectangle {
             z: 100000
-            visible: helpButton.checked && hud.visible
+            visible: effect.helpOpen && hud.visible
             anchors.top: hud.vertical ? hud.top : (hud.atBottom ? undefined : hud.bottom)
             anchors.bottom: !hud.vertical && hud.atBottom ? hud.top : undefined
             anchors.left: hud.vertical ? (hud.atLeft ? hud.right : undefined) : (hud.atLeft ? hud.left : undefined)
@@ -1353,6 +1370,7 @@ KWin.SceneEffect {
                 K { text: "drag window edge or corner" }                        V { text: "resize it" }
                 K { text: "drag frame tag or edge" }                            V { text: "move that desktop's screens" }
                 K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: "apply, focused on it" }
+                K { text: effect.gestureLabel(effect.configuration.MouseZoomToDesktop) + " frame" }  V { text: "zoom to that desktop" }
                 K { text: effect.gestureLabel(effect.configuration.MouseGotoDesktop) + " frame" }    V { text: "apply with that desktop current" }
                 K { text: effect.gestureLabel(effect.configuration.MouseNewDesktopAt) + " window outside frames" } V { text: "new desktop centred on it" }
                 K { text: effect.keyLabel(effect.configuration.KeyApply) }      V { text: "apply and close" }

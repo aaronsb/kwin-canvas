@@ -1,5 +1,7 @@
 # kwin-canvas
 
+![kwin-canvas: the canvas zoomed to fit, two desktops as monitor frames on a grid, windows as live thumbnails](docs/images/02-hero.png)
+
 An infinite canvas for KDE Plasma, built on KWin's public scripting API. No
 patches, no forked compositor, no plugin against private headers.
 
@@ -66,7 +68,8 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 | + on a frame tag | | add a desktop after that one |
 | trash on a frame tag | | remove that desktop (never the first) |
 | double-click a window | | apply with it on screen, focus it |
-| double-click a frame | | apply with that desktop current |
+| double-click a frame | | zoom to that desktop |
+| Ctrl+double-click a frame | | apply with that desktop current |
 | Shift+double-click a window outside every frame | | new desktop centred on it, window moved there |
 | Enter | | apply and close |
 | Esc | | cancel, nothing moves |
@@ -122,8 +125,9 @@ desktop sees Meta chords first. `build/tools/fakeinput` injects pointer and
 keyboard events into it through KWin's fake-input protocol, which is how the
 tests and the demo drive it.
 
-See [docs/architecture.md](docs/architecture.md) for the model and the KWin
-API facts this rests on, and [docs/testing.md](docs/testing.md) for the harness.
+See [docs/tour.md](docs/tour.md) for a tour in screenshots,
+[docs/architecture.md](docs/architecture.md) for the model and the KWin API
+facts this rests on, and [docs/testing.md](docs/testing.md) for the harness.
 
 ## Prior attempts
 

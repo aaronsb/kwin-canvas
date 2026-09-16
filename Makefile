@@ -16,7 +16,7 @@ PYTHON      := python3
 .DEFAULT_GOAL := help
 .PHONY: help deps deps-install install uninstall reload enable disable status \
         tools fixtures play nest nest-down nest-clients nest-fixtures nest-reload nest-shot nest-log nest-clean nest-cmd \
-        test golden demo video clean stage dist release
+        test golden demo video clean stage dist release tour
 
 help: ## Show this help
 	@echo "kwin-canvas"
@@ -118,6 +118,9 @@ golden: install fixtures ## Re-record the golden screenshots from the current bu
 
 demo: install fixtures tools ## Drive a scripted session with real input; screenshots and frames to build/demo
 	demo/demo.sh
+
+tour: install fixtures ## Regenerate the screenshot tour images in docs/images
+	docs/tour.sh
 
 video: ## Assemble build/demo frames into demo.mp4 and demo.gif (run `make demo` first)
 	demo/demo.sh --video-only

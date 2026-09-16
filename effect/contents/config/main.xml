@@ -87,9 +87,13 @@
             <label>Gesture on a window that applies with it focused: Click or DoubleClick, with optional Shift+, Ctrl+, Alt+, Meta+.</label>
             <default>DoubleClick</default>
         </entry>
+        <entry name="MouseZoomToDesktop" type="String">
+            <label>Gesture on a desktop frame that zooms the camera to that desktop's frames.</label>
+            <default>DoubleClick</default>
+        </entry>
         <entry name="MouseGotoDesktop" type="String">
             <label>Gesture on a desktop frame that applies with that desktop current.</label>
-            <default>DoubleClick</default>
+            <default>Ctrl+DoubleClick</default>
         </entry>
         <entry name="MouseNewDesktopAt" type="String">
             <label>Gesture on a window outside every frame that creates a desktop centred on it.</label>
