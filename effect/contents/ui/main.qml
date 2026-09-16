@@ -367,11 +367,14 @@ KWin.SceneEffect {
             delegate: Item {
                 id: thumb
                 required property int index
-                readonly property var entry: { effect.revision; return effect.entries[index]; }
-                x: (entry.x - effect.viewX) * effect.zoom - view.sg.x
-                y: (entry.y - effect.viewY) * effect.zoom - view.sg.y
-                width: entry.width * effect.zoom
-                height: entry.height * effect.zoom
+                // The entry object keeps its identity across drags, so the
+                // geometry bindings read the table directly and depend on
+                // revision to re-evaluate after dragEntry().
+                readonly property var entry: effect.entries[index]
+                x: { effect.revision; return (effect.entries[index].x - effect.viewX) * effect.zoom - view.sg.x; }
+                y: { effect.revision; return (effect.entries[index].y - effect.viewY) * effect.zoom - view.sg.y; }
+                width: { effect.revision; return effect.entries[index].width * effect.zoom; }
+                height: { effect.revision; return effect.entries[index].height * effect.zoom; }
                 z: index
 
                 KWin.WindowThumbnail {
