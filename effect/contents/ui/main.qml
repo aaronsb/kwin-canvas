@@ -320,6 +320,7 @@ KWin.SceneEffect {
     delegate: Item {
         id: view
         readonly property rect sg: KWin.SceneView.screen.geometry
+        property bool spaceHeld: false
         focus: true
 
         Ground {
@@ -335,11 +336,12 @@ KWin.SceneEffect {
             tileImage: effect.configuration.TileImage
         }
 
-        // Pan on empty ground.
+        // Pan: middle-drag anywhere, or hold Space and left-drag (the hand tool).
         DragHandler {
             id: panDrag
             target: null
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+            acceptedButtons: view.spaceHeld ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
+            cursorShape: active ? Qt.ClosedHandCursor : (view.spaceHeld ? Qt.OpenHandCursor : Qt.ArrowCursor)
             property point last: Qt.point(0, 0)
             onActiveChanged: last = Qt.point(0, 0)
             onActiveTranslationChanged: {
@@ -401,6 +403,7 @@ KWin.SceneEffect {
                 DragHandler {
                     id: winDrag
                     target: null
+                    enabled: !view.spaceHeld
                     acceptedButtons: Qt.LeftButton
                     property point last: Qt.point(0, 0)
                     onActiveChanged: last = Qt.point(0, 0)
@@ -412,6 +415,7 @@ KWin.SceneEffect {
                 }
 
                 TapHandler {
+                    enabled: !view.spaceHeld
                     acceptedButtons: Qt.LeftButton
                     onTapped: effect.pick(thumb.entry)
                 }
@@ -420,10 +424,13 @@ KWin.SceneEffect {
 
         Keys.onPressed: (event) => {
             switch (event.key) {
+            case Qt.Key_Space:
+                if (!event.isAutoRepeat) view.spaceHeld = true;
+                event.accepted = true;
+                break;
             case Qt.Key_Escape: effect.cancel(); event.accepted = true; break;
             case Qt.Key_Return:
-            case Qt.Key_Enter:
-            case Qt.Key_Space: effect.commit(null); event.accepted = true; break;
+            case Qt.Key_Enter: effect.commit(null); event.accepted = true; break;
             case Qt.Key_Home:
             case Qt.Key_0: effect.home(); event.accepted = true; break;
             case Qt.Key_F:
@@ -431,6 +438,13 @@ KWin.SceneEffect {
             case Qt.Key_Plus:
             case Qt.Key_Equal: effect.setZoom(effect.zoom * effect.zoomStep, KWin.Workspace.cursorPos); event.accepted = true; break;
             case Qt.Key_Minus: effect.setZoom(effect.zoom / effect.zoomStep, KWin.Workspace.cursorPos); event.accepted = true; break;
+            }
+        }
+
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Space && !event.isAutoRepeat) {
+                view.spaceHeld = false;
+                event.accepted = true;
             }
         }
 
@@ -451,7 +465,7 @@ KWin.SceneEffect {
                 font.pixelSize: 13
                 font.family: "monospace"
                 text: "zoom " + effect.zoom.toFixed(2) + "   view " + Math.round(effect.viewX) + ", " + Math.round(effect.viewY)
-                    + "\ndrag: pan   wheel: zoom   click: pick   drag window: move\nspace/enter: apply   esc: cancel   home: origin   f: fit"
+                    + "\nspace+drag or middle-drag: pan   wheel: zoom   click: pick   drag window: move\nenter: apply   esc: cancel   home: origin   f: fit"
             }
         }
     }

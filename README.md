@@ -41,11 +41,11 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 |---|---|---|
 | Meta+Space (configurable) | open the canvas | apply and close |
 | Meta+Ctrl+Space | jump home | jump home |
-| drag on ground | | pan |
+| Space+drag, or middle-drag | | pan |
 | wheel | | zoom at the cursor |
 | drag a window | | move it on the plane |
 | click a window | | apply, close, focus it |
-| Space / Enter | | apply and close |
+| Enter | | apply and close |
 | Esc | | cancel, nothing moves |
 | Home / 0 | | origin |
 | F / W | | zoom to fit |
