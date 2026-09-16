@@ -65,6 +65,7 @@ contrastEnabled=false
 
 [Effect-kwin-canvas]
 PublishGround=true
+BorderActivate=7
 DebugSeq=0
 ToggleShortcut=Ctrl+Alt+Space
 HomeShortcut=Ctrl+Alt+Home

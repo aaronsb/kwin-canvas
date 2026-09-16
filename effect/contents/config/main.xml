@@ -35,6 +35,14 @@
             <label>Optional image tiled across the canvas at 1:1. Empty draws the grid.</label>
             <default></default>
         </entry>
+        <entry name="BorderActivate" type="IntList">
+            <label>Screen edges and corners that open the canvas (written by the Screen Edges settings page). 0 top, 1 top-right, 2 right, 3 bottom-right, 4 bottom, 5 bottom-left, 6 left, 7 top-left.</label>
+            <default></default>
+        </entry>
+        <entry name="TouchBorderActivate" type="IntList">
+            <label>Touch screen edges that open the canvas.</label>
+            <default></default>
+        </entry>
         <entry name="OpenZoom" type="String">
             <label>View when the canvas opens: "fit" zooms to every window and frame, "1" stays at 1:1, any other number is a zoom anchored at the screen centre.</label>
             <default>fit</default>

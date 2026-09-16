@@ -571,6 +571,30 @@ KWin.SceneEffect {
         }
     }
 
+    // ---- screen edges ------------------------------------------------------
+    // The Screen Edges settings page lists this effect (X-KWin-Border-Activate)
+    // and writes the chosen corners into BorderActivate. One handler per edge;
+    // pushing the pointer into it toggles the canvas, like Overview's hot corner.
+    Instantiator {
+        model: effect.configuration.BorderActivate
+        delegate: KWin.ScreenEdgeHandler {
+            required property int modelData
+            enabled: true
+            edge: modelData
+            onActivated: effect.toggle()
+        }
+    }
+    Instantiator {
+        model: effect.configuration.TouchBorderActivate
+        delegate: KWin.ScreenEdgeHandler {
+            required property int modelData
+            enabled: true
+            mode: KWin.ScreenEdgeHandler.Touch
+            edge: modelData
+            onActivated: effect.toggle()
+        }
+    }
+
     // ---- nested test harness -----------------------------------------------
     // The harness writes DebugCommand + DebugSeq into kwinrc and calls reconfigure.
     function runDebug(cmd) {

@@ -164,6 +164,15 @@ into key codes at load and on every reconfigure by looking up `Qt["Key_" +
 name]`, and the legend is rendered from the same entries. A misspelt name is
 logged and skipped.
 
+## Screen edges
+
+`X-KWin-Border-Activate` in the metadata puts the effect into the Screen
+Edges settings page, which writes the chosen edges into `BorderActivate` in
+the effect's config group as ElectricBorder numbers (top is 0, clockwise to
+top-left at 7, the same order as `ScreenEdgeHandler.Edge`). The effect
+instantiates one `ScreenEdgeHandler` per number and toggles on activation.
+`TouchBorderActivate` does the same for touch edges.
+
 ## Known limits
 
 - **No interaction while zoomed.** The canvas is a navigation mode. This is

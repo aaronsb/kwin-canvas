@@ -64,12 +64,18 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 Activating an off-screen window from the task manager pans the plane so it
 comes on screen.
 
+The canvas can also replace the Overview hot corner. It appears in System
+Settings under Screen Edges, so any edge or corner can open it; pushing the
+pointer in toggles it. In the nest the top-left corner is preconfigured.
+
 Every key above is a config entry in the `[Effect-kwin-canvas]` group of
 `kwinrc` (`KeyApply`, `KeyCancel`, `KeyHome`, `KeyOrigin`, `KeyFit`,
 `KeyZoomIn`, `KeyZoomOut`, `KeyPan`, comma-separated Qt key names without the
 `Key_` prefix), as are the two global chords (`ToggleShortcut`, `HomeShortcut`)
-and the opening view (`OpenZoom`: `fit`, `1`, or a zoom such as `0.5`). The
-legend inside the canvas is built from the same entries.
+the opening view (`OpenZoom`: `fit`, `1`, or a zoom such as `0.5`), and the
+screen edges (`BorderActivate`, `TouchBorderActivate`, as ElectricBorder
+numbers, which the Screen Edges page writes for you). The legend inside the
+canvas is built from the same entries.
 
 ## Develop
 
