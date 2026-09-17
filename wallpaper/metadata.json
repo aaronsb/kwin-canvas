@@ -12,7 +12,7 @@
         "Id": "kwin-canvas-ground",
         "License": "GPL-2.0-or-later",
         "Name": "Canvas Ground",
-        "Version": "0.2.0"
+        "Version": "0.4.0"
     },
     "X-KDE-ParentApp": "org.kde.plasmashell"
 }

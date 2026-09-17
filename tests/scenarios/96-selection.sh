@@ -23,8 +23,10 @@ run_scenario() {
     c state
     assert_eq "cleared" "$(selected)" 0
     if ! have_input; then skip "fakeinput not built (make tools)"; c cancel; return; fi
-    # Ctrl+click toggles a window in and out.
-    read -r sx sy <<<"$(screen_of $(( $(eget Dolphin x) + 350 )) $(( $(eget Dolphin y) + 180 )))"
+    # Ctrl+click on the title bar toggles a window in and out (the client
+    # area is the app's with pass-through live). Near the bar's left end:
+    # KWrite, moved above, now overlaps the rest of it.
+    read -r sx sy <<<"$(screen_of $(( $(eget Dolphin x) + 40 )) $(( $(eget Dolphin y) + 12 )))"
     printf "move $sx $sy\nkey ctrl down\nclick\nkey ctrl up\n" | input
     sleep 0.4; c state
     assert_eq "ctrl+click selected Dolphin" "$(selected)" 1

@@ -135,9 +135,13 @@ arrange() {
     for cap in "${!LAYOUT[@]}"; do c "placeby $cap ${LAYOUT[$cap]}"; done
     sleep 0.6
     c commit
-    # Deterministic screenshots: the same active window (shadow, decoration)
-    # and the pointer parked where it hovers nothing.
-    c "activate KCalc"
+    # Deterministic screenshots: a fixed focus chain and stacking order (the
+    # fixtures' launch order, KCalc on top), so the active window (shadow,
+    # decoration) is always KCalc, the window KWin falls back to when KCalc
+    # leaves the activity is always Gwenview, and overlaps stack the same,
+    # whatever order the fixtures came up in; and the pointer parked where
+    # it hovers nothing.
+    for cap in sample.txt Konsole Dolphin Gwenview KCalc; do c "activate $cap"; done
     have_input && input move 1915 1075
     sleep 0.3
 }

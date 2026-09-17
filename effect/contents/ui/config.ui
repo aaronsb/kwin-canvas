@@ -59,7 +59,7 @@
     </layout></widget></item>
    <item><widget class="QGroupBox" name="group3"><property name="title"><string>Default global chords (rebind under Shortcuts > KWin)</string></property>
     <layout class="QFormLayout" name="form3">
-     <item row="0" column="0"><widget class="QLabel" name="label_ToggleShortcut"><property name="text"><string>Open or close the canvas</string></property><property name="buddy"><cstring>kcfg_ToggleShortcut</cstring></property></widget></item>
+     <item row="0" column="0"><widget class="QLabel" name="label_ToggleShortcut"><property name="text"><string>Step out to the canvas, or enter the location in view</string></property><property name="buddy"><cstring>kcfg_ToggleShortcut</cstring></property></widget></item>
      <item row="0" column="1"><widget class="QLineEdit" name="kcfg_ToggleShortcut"/></item>
      <item row="1" column="0"><widget class="QLabel" name="label_HomeShortcut"><property name="text"><string>Return this activity to the origin</string></property><property name="buddy"><cstring>kcfg_HomeShortcut</cstring></property></widget></item>
      <item row="1" column="1"><widget class="QLineEdit" name="kcfg_HomeShortcut"/></item>
@@ -71,8 +71,6 @@
      <item row="4" column="1"><widget class="QLineEdit" name="kcfg_PanUpShortcut"/></item>
      <item row="5" column="0"><widget class="QLabel" name="label_PanDownShortcut"><property name="text"><string>Pan down one step</string></property><property name="buddy"><cstring>kcfg_PanDownShortcut</cstring></property></widget></item>
      <item row="5" column="1"><widget class="QLineEdit" name="kcfg_PanDownShortcut"/></item>
-     <item row="6" column="0"><widget class="QLabel" name="label_PanModeShortcut"><property name="text"><string>Hold to pan the desktop with the mouse</string></property><property name="buddy"><cstring>kcfg_PanModeShortcut</cstring></property></widget></item>
-     <item row="6" column="1"><widget class="QLineEdit" name="kcfg_PanModeShortcut"/></item>
     </layout></widget></item>
    <item><widget class="QGroupBox" name="groupPan"><property name="title"><string>Panning at 1:1</string></property>
     <layout class="QFormLayout" name="formPan">
@@ -80,7 +78,7 @@
      <item row="0" column="1"><widget class="QDoubleSpinBox" name="kcfg_PanStep"><property name="minimum"><double>0.05</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property></widget></item>
      <item row="1" column="0"><widget class="QLabel" name="label_PanDuration"><property name="text"><string>Slide duration (ms, 0 jumps)</string></property><property name="buddy"><cstring>kcfg_PanDuration</cstring></property></widget></item>
      <item row="1" column="1"><widget class="QSpinBox" name="kcfg_PanDuration"><property name="minimum"><number>0</number></property><property name="maximum"><number>2000</number></property></widget></item>
-     <item row="3" column="1"><widget class="QCheckBox" name="kcfg_PanModePassthrough"><property name="text"><string>Pass clicks and wheel through to windows in pan mode (needs the kwin-canvas-passthrough plugin)</string></property></widget></item>
+     <item row="3" column="1"><widget class="QCheckBox" name="kcfg_Passthrough"><property name="text"><string>Pass clicks, wheel and keys through to windows while the canvas is open (needs the kwin-canvas-passthrough plugin)</string></property></widget></item>
      <item row="2" column="0"><widget class="QLabel" name="label_PanSwipeFingers"><property name="text"><string>Touchpad swipe fingers (0 off; 3 and 4 also fire KWin's own swipes)</string></property><property name="buddy"><cstring>kcfg_PanSwipeFingers</cstring></property></widget></item>
      <item row="2" column="1"><widget class="QSpinBox" name="kcfg_PanSwipeFingers"><property name="minimum"><number>0</number></property><property name="maximum"><number>5</number></property></widget></item>
     </layout></widget></item>

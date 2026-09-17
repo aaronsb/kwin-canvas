@@ -36,8 +36,8 @@
 #
 # Debug commands: open commit cancel toggle home extents state
 #                 pan DX DY | zoom Z [X Y] | shift DX DY | slide DX DY
-#                 panstep DX DY | swipe DX DY PROGRESS|end|cancel
-#                 panmode [end|cancel]
+#                 panstep DX DY | swipe DX DY PROGRESS|end|cancel | enter
+
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -87,7 +87,6 @@ PanLeftShortcut=Ctrl+Alt+Left
 PanRightShortcut=Ctrl+Alt+Right
 PanUpShortcut=Ctrl+Alt+Up
 PanDownShortcut=Ctrl+Alt+Down
-PanModeShortcut=Ctrl+Alt+P
 
 [Compositing]
 Backend=OpenGL

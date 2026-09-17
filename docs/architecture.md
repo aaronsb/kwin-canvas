@@ -31,7 +31,7 @@ activity, and a desktop switch changes the set of windows, not the view.
 
 A frame can be switched off from its tag. `HiddenFrames` lists
 `activityId|outputName` keys; a hidden frame is not drawn, is not a snap
-candidate, is left out of fit, and never claims a window on apply. The
+candidate, is left out of fit, and never claims a window when you step in. The
 effect writes the key through its own `configuration` map and
 `writeConfig()`, so the choice survives a restart.
 
@@ -45,19 +45,27 @@ re-derived from live geometry each time the canvas opens.
 
 ## Lifecycle
 
-**Closed (1:1).** The effect is not running. No transform, no grab, no
-per-frame work. Two things happen in this state:
+Two places. A **location** is an activity's frame group at 1:1 with the
+canvas closed. The **overworld** is the open canvas. One chord, Toggle
+Canvas (`ToggleShortcut`, default `Meta+Ctrl+Alt+Space`), steps out of a
+location into the overworld and back in.
+
+**Closed (in a location).** The effect is not running. No transform, no
+grab, no per-frame work, so games and fullscreen apps get KWin's native
+path: direct scanout, no extra composition. Three things happen in this
+state:
 
 - `windowActivated` on a window with no on-screen intersection shifts every
   canvas window by the same delta so it lands centred on its output, and
   adjusts `view` to match. The task manager becomes a way to travel.
 - A pan chord or a touchpad swipe starts a slide (below).
-- `Meta+Space` opens the canvas.
+- The Toggle chord steps out: the canvas opens.
 
 **Slide.** A pan at 1:1. `slide(dx, dy)` opens the canvas *quiet*: `open(true)`
 snapshots as usual but skips the opening view, and while `quiet` is set the
-per-screen delegate is disabled for input and draws only the ground and the
-thumbnails, with no frames, tags, borders or toolbar. At zoom 1 that is
+per-screen delegate is disabled for input and draws the ground, the frames
+as bare wallpaper (no tint or outline at 1:1), and this activity's
+thumbnails, with no tags, borders or toolbar. At zoom 1 that is
 pixel-identical to the real screen when the Canvas Ground wallpaper is in
 use. A `ParallelAnimation` moves `viewX`/`viewY` to `slideTo` over
 `PanDuration` with an ease-out; a second slide while one runs adds to the
@@ -69,39 +77,32 @@ no window changes activity, so what slides is what 1:1 shows before and
 after. A slide that ends where it began cancels instead. Any action that
 wants the real canvas while a slide runs (`toggle`, Home) finishes the slide
 first. A pan chord while the canvas is open moves the camera by the same
-step and nothing more.
-
-**Pan mode** is a slide held open with input on. The chord's handler opens
-quiet and sets `panMode`; the view is enabled while quiet only in that
-mode, and `panOnly` (Space held or pan mode) stands every grip and button
-down, so left and middle drags reach the pan handler and the wheel is off.
-The wheel zooms at the pointer as in the open canvas, and below 1:1
-(`quietPlane`) the frames and every activity's windows are drawn, tags and
-toolbar still off. The chord's keys are parsed from `PanModeShortcut`;
-releasing the main key or any of its modifiers settles: the view and the
-zoom animate together to 1:1 with the canvas point under the pointer kept
-(`settleTarget`), then `endSlide` shifts the windows. Escape animates back
-to the entry view and cancels, apply settles. KWin re-fires a held chord on
-key autorepeat, so a second activation is ignored: release is the exit.
+step and nothing more. A slide never leaves the location; the Toggle chord
+is the only way out.
 
 **Pass-through** is the optional binary plugin under `plugin/`, a
-`KWin::Plugin` that is also an `InputEventFilter` at the global-shortcut
-weight, ahead of the effects filter. Pan mode probes it over D-Bus
-(`org.kde.KWin`, `/KWinCanvas`, `org.kde.kwin.canvas.Passthrough`); when it
-answers, the effect publishes the camera to it on every change (view, zoom,
-current activity, the targets as JSON) and switches it on. The filter maps
-each pointer event to the plane, finds the topmost window the quiet canvas
-would draw there (this activity's at 1:1, every activity's below), and if
-the window's input surface takes the point, delivers the event to the
-Wayland seat with the window's own input transformation, so the client sees
-the same surface coordinates it would at 1:1. A press inside a window raises
-it and starts an implicit grab until the buttons are up; a press on the
-ground leaves the gesture to the effect. Over the ground the pointer leaves
-the surface and events fall through, so the effect pans and zooms as
-before. With pass-through live the thumbnail grips come back in pan mode:
-the plugin has taken the client areas, so they only ever see title bars and
-edges, and a drag there moves the window on the plane. Keys are not
-forwarded. Settling writes every entry once from its plane position.
+`KWin::Plugin` that is also an `InputEventFilter`, and it is live whenever
+the canvas is open (`Passthrough`, default on). The filter is installed at
+the `Effects` weight, which KWin inserts after its global-shortcut filter
+and ahead of its own effects filter, so the Toggle chord still fires and
+the effect's QML scene sees only what the plugin lets through. The effect
+probes it over D-Bus on open (`org.kde.KWin`, `/KWinCanvas`,
+`org.kde.kwin.canvas.Passthrough`); when it answers, the effect publishes
+the camera to it on every change (view, zoom, current activity, the targets
+as JSON) and switches it on. The filter maps each pointer event to the
+plane, finds the topmost window the canvas draws there, and if the window's
+input surface takes the point, delivers the event to the Wayland seat with
+the window's own input transformation, so the client sees the same surface
+coordinates it would at 1:1. A press inside a window raises it and starts
+an implicit grab until the buttons are up; a press on the ground leaves the
+gesture to the effect. Over the ground the pointer leaves the surface and
+events fall through, so the effect pans and zooms as before. Every key goes
+to the focused window, Esc included; the canvas's own keys work only when
+the plugin is absent. The thumbnail grips only ever see title bars and
+edges, since the plugin has taken the client areas, and a drag there moves
+the window on the plane; selection, the marquee and the arrange menu start
+from the title bar. Stepping in writes every entry once from its plane
+position.
 
 `endSlide` writes each shown window once, from its entry's canvas position
 and its activity's final target, because writing a geometry makes the entry
@@ -121,11 +122,13 @@ content, so the camera goes the other way. Four `SwipeGestureHandler`s are
 instantiated for the configured finger count, and re-instantiated only when
 that count changes.
 
-**Open.** `open()` sets `zoom = 1`, records `entryView` and a copy of the
+**Open (the overworld).** `open()` sets `zoom = 1`, records `entryView` and a copy of the
 targets, snapshots every canvas window of the current desktop, on every
 activity, in stacking order into `entries[] = {window, activity, x, y, width,
 height}` with `x = frame.x + target(activity).x` and so on, then moves the camera to the
-configured opening view (`OpenZoom`, default fit-everything). The per-screen delegate draws the ground and one live `WindowThumbnail`
+configured opening view (`OpenZoom`, default `1`: the current viewport, so the
+overworld looks like the desktop until you move; `fit` frames every window
+and frame). The per-screen delegate draws the ground, the frames with their wallpaper, the tags, the toolbar, and one live `WindowThumbnail`
 per entry at `(entry - view) * zoom - screen.topLeft`. Pan changes `view`.
 Zoom changes `zoom` and `view` together so the canvas point under the anchor
 stays put:
@@ -146,24 +149,32 @@ plane as a unit and its windows keep their frame geometry at commit; off,
 the frames move over the windows and the windows' frame geometry changes.
 The camera is never involved in what gets applied.
 
-**Commit.** For every entry, the activity whose frame overlaps the entry the
+**Enter (step in).** The Toggle chord, Enter, or the toolbar's Enter
+button enters the location under the screen centre: the frame under the
+centre of the active screen names the activity, and that activity's target
+is placed so the canvas point under the screen centre stays under it at
+1:1, so the viewport is written where the camera is. A frame of another
+activity requests the switch, and the write happens when KWin reports it;
+the screen centre over no frame keeps the current activity. Then, for every entry, the activity whose frame overlaps the entry the
 most wins: the window's `activities` list is set to that one if it differs
 (a window on every activity stays on every activity), and
 `frameGeometry = entry - target(that activity)`. An entry in no frame keeps
 its activity. Windows not shown (minimized, hidden, other desktops) are
 shifted by how much their activity's target moved, so they stay put on the
 plane. The camera is set to the current activity's target at zoom 1, the
-ground offset is published, and the effect hides. `pick()` (double-click) picks the
-window's activity, the one whose frame holds it, else the one it belongs
-to, and places that activity's target by `FocusTarget`: `window` sets it to
+ground offset is published, and the effect hides. `pick()` (double-click on
+a window's title bar) enters that window's location: the activity whose
+frame holds it, else the one it belongs to, with the target placed by
+`FocusTarget`: `window` sets it to
 `canvas(pointer) - pointer`, so the point clicked stays under the pointer at
 1:1, as a zoom-in there would; `desktop` leaves the target alone for a
 window inside a frame and centres the active-screen frame on a window
-outside every frame. If the activity is not current, the switch is
-requested and the focus is applied when KWin reports it. `cancel()` restores the targets and `entryView` and hides without
-writing anything.
+outside every frame. A double-click on a frame enters that location with
+its activity current. `cancel()` (Esc without the plugin, the toolbar's
+Cancel) restores the targets and `entryView` and hides without writing
+anything: back to where you were, nothing moved.
 
-**Activity switch at 1:1.** `currentActivityChanged` sets `view` to the new
+**Activity switch in a location.** `currentActivityChanged` sets `view` to the new
 activity's target and republishes the ground, so the wallpaper scrolls to
 where that activity's viewport sits on the plane.
 
@@ -277,7 +288,7 @@ passes a non-empty activity.
 ## Keys
 
 All keys come from config. The global chords are `ShortcutHandler` sequences
-(`ToggleShortcut`, `HomeShortcut`, `PanModeShortcut`, and `PanLeftShortcut`
+(`ToggleShortcut`, `HomeShortcut`, and `PanLeftShortcut`
 through `PanDownShortcut`; the pan chords default to nothing). The keys the open canvas listens for are
 comma-separated Qt key names (`KeyApply` = `Return,Enter` and so on), parsed
 into key codes at load and on every reconfigure by looking up `Qt["Key_" +
@@ -332,7 +343,7 @@ the primary display only, which is the first output in
 edge or corner, and `HudShape` the flow: one `GridLayout` whose flow, rows
 and columns follow the shape, with the label spanning the square's width and
 the separators hidden there. It shows the current activity and zoom, one swatch per activity, the camera
-and apply actions, a help panel rendered from the binding config, and a menu that opens
+actions, Enter and Cancel, a help panel rendered from the binding config, and a menu that opens
 the settings pages through `KCMLauncher.openSystemSettings`, as Overview does.
 
 ## Known limits
@@ -345,10 +356,11 @@ the settings pages through `KCMLauncher.openSystemSettings`, as Overview does.
 - **Activity changes are asynchronous.** Adding, removing or switching goes
   through the activity manager; the canvas follows when KWin reports it.
 
-- **No interaction while zoomed** without the plugin. The canvas is a
-  navigation mode. With the pass-through plugin, pan mode hands the pointer
-  to the real windows; keys still wait for the settle, and a window's popups
-  open at its real position, off screen if the window is.
+- **No interaction in the overworld** without the plugin: the canvas is
+  then a navigation view. With the pass-through plugin the overworld is
+  interactive, pointer and keys, and Esc belongs to the focused window; a
+  window's popups still open at its real position, off screen if the window
+  is.
 - **Output changes.** Hotplug or resolution change runs
   `checkWorkspacePosition` on every window and may pull far-off windows
   toward the new layout. The effect re-derives from geometry so nothing is

@@ -1,0 +1,21 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "aaronsb@gmail.com",
+                "Name": "Aaron Bockelie"
+            }
+        ],
+        "Category": "Windows and Tasks",
+        "Description": "Step out to the kwin-canvas overworld and back",
+        "EnabledByDefault": true,
+        "Icon": "view-grid",
+        "Id": "org.kde.kwin.canvas.toggle",
+        "License": "GPL-2.0-or-later",
+        "Name": "Canvas",
+        "Version": "0.4.0",
+        "Website": "https://github.com/aaronsb/kwin-canvas"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

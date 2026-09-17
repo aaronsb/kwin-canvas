@@ -5,18 +5,30 @@
 An infinite canvas for KDE Plasma, built on KWin's public scripting API. No
 patches, no forked compositor, no plugin against private headers.
 
-Windows live on one unbounded plane. Every activity is a viewport onto that
-plane, drawn while the canvas is open as a group of **monitor frames**:
-outlined rectangles, one per output in the layout KDE knows, tagged with the
-activity and output names. Drag windows into a frame or drag an activity's
-frames over a cluster of windows, press Enter, and that is what the real
-screens show in that activity. Switching activities at 1:1 switches viewport,
-and dragging a window into another activity's frame moves it to that
-activity. Virtual desktops stay what they are: the canvas shows the current
-desktop's windows. At 1:1 nothing is running: every window is an ordinary KWin window at an ordinary
-position, some of them off-screen, and KWin handles input, popups, XWayland and
-focus exactly as it always does. Open the canvas to zoom out, pan, rearrange
-and pick; close it and the new layout is written back as plain window geometry.
+Windows live on one unbounded plane, and there are two places to be on it.
+A **location** is an activity's viewport onto the plane at 1:1 with the
+canvas closed: stock Plasma, nothing of ours running, so games and
+fullscreen apps get KWin's native path (direct scanout, no extra
+composition). Every window is an ordinary KWin window at an ordinary
+position, some of them off-screen, and KWin handles input, popups, XWayland
+and focus exactly as it always does. The **overworld** is the open canvas:
+every window drawn live on the plane, the ground, each activity as a group
+of **monitor frames** (outlined rectangles, one per output in the layout KDE
+knows, tagged with the activity and output names, its wallpaper inside) and
+the toolbar. With the pass-through plugin loaded the windows in the
+overworld are live too: the pointer over a window's client area goes to the
+window and every key goes to the focused window.
+
+One chord steps out and back in. Stepping out opens the overworld at the
+current viewport at 1:1, so it looks like the desktop until you move.
+Stepping in enters the location under the screen centre; if that is another
+activity's frame you switch to it, and the viewport is written where the
+camera is. Drag windows into a frame or drag an activity's frames over a
+cluster of windows, step in, and that is what the real screens show in that
+activity, written back as plain window geometry. Switching activities in a
+location switches viewport, and dragging a window into another activity's
+frame moves it to that activity. Virtual desktops stay what they are: the
+canvas shows the current desktop's windows.
 
 The ground plane is the reference for all of this. A grid with coordinate
 labels scrolls under the windows when you pan at 1:1 and scales with them when
@@ -32,7 +44,9 @@ you zoom out, so the plane has landmarks and the zoom has something to anchor.
 | `effect/` | KWin/Effect (QML) | The canvas: snapshot, ground, thumbnails, pan, zoom, pick, commit |
 | `wallpaper/` | Plasma/Wallpaper | The ground at 1:1, offset by the last committed pan |
 | `shared/Ground.qml` | copied into both | One renderer for the ground so both views match |
-| `plugin/` | KWin plugin (C++, optional) | Pass-through: in pan mode, clicks, drags and the wheel reach the real windows |
+| `plugin/` | KWin plugin (C++, optional) | Pass-through: while the canvas is open, clicks, drags, the wheel and keys reach the real windows |
+| `tools/kwin-canvas` | CLI (bash) | Step in, cancel, open or toggle from a terminal or a VT; status |
+| `applet/` | Plasma/Applet | A panel button that fires the Toggle Canvas chord |
 | `dev/nest.sh` | harness | Nested KWin with its own D-Bus and config, driven from the shell |
 
 ## Install
@@ -50,14 +64,15 @@ KWin; rebuild it after a KWin upgrade. From a release tarball with no
 checkout:
 
 ```bash
-kpackagetool6 --type KWin/Effect --install kwin-canvas-0.3.1.kwineffect.tar.gz
-kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.3.1.tar.gz
+kpackagetool6 --type KWin/Effect --install kwin-canvas-0.4.0.kwineffect.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.4.0.tar.gz
+kpackagetool6 --type Plasma/Applet --install kwin-canvas-toggle-0.4.0.tar.gz
 ```
 
 then enable **Canvas** in System Settings → Desktop Effects. From a checkout:
 
 ```bash
-./configure.sh install      # both packages into ~/.local/share, effect turned on
+./configure.sh install      # the packages into ~/.local/share, the CLI into ~/.local/bin, effect turned on
 ./configure.sh status       # installed, enabled, loaded
 ./configure.sh uninstall    # off and removed
 ```
@@ -72,31 +87,32 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 
 ## Use
 
-| Key | At 1:1 | Canvas open |
+| Key | At 1:1 (in a location) | Canvas open (the overworld) |
 |---|---|---|
-| Meta+Space | open the canvas, zoomed to fit | apply and close |
+| Meta+Ctrl+Alt+Space | step out: the overworld opens at the current viewport, 1:1 | step in: enter the location under the screen centre; another activity's frame switches to that activity |
 | Meta+Ctrl+Space | jump home | jump home |
 | pan chords (no default; bind under Shortcuts → KWin) | slide the desktop half a screen that way | move the camera |
 | three-finger touchpad swipe | the desktop follows the fingers, then settles half a screen that way | |
-| pan-mode chord held (no default) | drag the desktop with the mouse, as often as you like, and wheel to zoom out and see the whole plane; let go of the chord to settle at 1:1 with the point under the pointer kept, Esc to slide back | |
 | drag on ground, Space+drag, or middle-drag | | pan |
-| wheel | | zoom at the cursor |
-| drag a window | | move it on the plane |
+| wheel over the ground | | zoom at the cursor |
+| pointer over a window's client area | | the window's, with the plugin: click, drag, wheel, and a click raises |
+| keys | | the focused window's, with the plugin; the canvas keys below apply without it |
+| drag a window's title bar | | move it on the plane |
 | drag a frame's tag or edge | | move that activity's frames, all together, and its windows with them so nothing changes on screen (`FramesCarryWindows`, on by default; off moves the frames over the windows) |
 | drag a window's edge or corner | | resize it, live |
 | eye on a frame tag | | hide or show that frame: a hidden frame is not drawn and takes no windows, for an activity that lives on one monitor |
 | + on a frame tag | | add an activity |
 | trash on a frame tag | | remove that activity (never the last) |
-| click a window | | select it; Shift+click adds, Ctrl+click toggles, Shift+drag on the ground selects by rectangle |
-| drag a selected window | | move the whole selection, geometry kept; drop it in a frame and apply to move them all to that activity |
-| right-click a window | | arrange the selection: horizontally, vertically, tile, grid (rows × columns), cascade; send to an activity or to the plane |
+| click a window's title bar | | select it; Shift+click adds, Ctrl+click toggles, Shift+drag on the ground selects by rectangle |
+| drag a selected window's title bar | | move the whole selection, geometry kept; drop it in a frame and step in to move them all to that activity |
+| right-click a window's title bar | | arrange the selection: horizontally, vertically, tile, grid (rows × columns), cascade; send to an activity or to the plane |
 | toolbar toggles | | snap to edges, corners, grid while dragging or resizing (grid step and snap distance are settings) |
-| double-click a window | | apply, focused on it; a window in another activity's frame takes you to that activity. With the `FocusTarget` setting at `window` (default) the point you clicked stays under the pointer at 1:1 and the frames move to make that so; at `desktop` a frame stays where it is and only a window outside every frame pulls its frame to it |
-| double-click a frame | | apply with that activity current |
+| double-click a window's title bar | | enter that window's location; a window in another activity's frame takes you to that activity. With the `FocusTarget` setting at `window` (default) the point you clicked stays under the pointer at 1:1 and the frames move to make that so; at `desktop` a frame stays where it is and only a window outside every frame pulls its frame to it |
+| double-click a frame | | enter that location, its activity current |
 | Ctrl+double-click a frame, or click its swatch in the toolbar | | zoom to that activity |
 | Shift+double-click a window outside every frame | | new activity centred on it, window moved there |
-| Enter | | apply and close |
-| Esc | | cancel, nothing moves |
+| Enter | | enter the location under the screen centre (the toolbar's **Enter**) |
+| Esc | | back to where you were, nothing moved (the toolbar's **Cancel**); the window's own key when pass-through is live |
 | Home | | look through the current activity's frames |
 | 0 | | canvas origin |
 | F / W | | zoom to fit |
@@ -104,21 +120,44 @@ disable the stock **Zoom** effect if it owns Meta+wheel.
 Activating an off-screen window from the task manager pans the plane so it
 comes on screen.
 
-**Pass-through** is the optional binary plugin, `kwin-canvas-passthrough`. With it loaded, pan mode becomes a limited desktop: the pointer over a window goes to that window, so clicks land, drags select or move things inside it, the wheel scrolls it, and a click raises it; a drag on the ground pans, a drag on a title bar or edge moves the window on the plane, and every change is written when you let go of the chord. Keys stay the mode's own until you settle. It is built against the installed KWin, and KWin loads it only for that exact version; when it is not there, pan mode is pan mode. `make plugin-status` says which.
+**Pass-through** is the optional binary plugin, `kwin-canvas-passthrough`,
+and it is live whenever the canvas is open. The pointer over a window's
+client area goes to that window, so clicks land, drags select or move
+things inside it, the wheel scrolls it, and a click raises it; every key
+goes to the focused window, Esc included. Title bars and edges, frames,
+tags, the ground and the toolbar stay the canvas's: a drag on a title bar
+moves the window on the plane, a drag on the ground pans, the wheel over
+the ground zooms. Clicking a window's client area no longer selects it;
+select from the title bar. The plugin is built against the installed KWin,
+and KWin loads it only for that exact version; without it the overworld is
+a navigation view and the canvas keys, Esc included, are its own. `make
+plugin-status` says which. The `Passthrough` setting turns it off.
 
-Panning at 1:1 is a **slide**: the effect opens for a moment at 1:1 with no
-frames or toolbar, this activity's windows glide, and their new positions
-are written once when it settles. No window changes activity. Pan mode is
-the same slide held open: while the chord is down the pointer is live, every
-left or middle drag pulls the desktop, the wheel zooms at the pointer and
-shows the frames and every activity's windows once you are below 1:1, and
-releasing any key of the chord settles back to 1:1 with the point under the
-pointer where it was. With the Canvas Ground wallpaper the ground
-under the windows is the same before, during and after; with an image
-wallpaper the grid shows while the desktop moves. The step, the duration and
-the swipe's finger count are settings. KWin's own three-finger swipes switch
+Panning in a location is a **slide**: the effect opens for a moment at 1:1
+with no frames or toolbar, this activity's windows glide, and their new
+positions are written once when it settles. No window changes activity, and
+you never leave the location. The desktop's wallpaper rides along inside
+its frame, and the ground shows beyond it. The step, the duration and the
+swipe's finger count are settings. KWin's own three-finger swipes switch
 virtual desktops and its four-finger swipes open Overview; a matching count
 fires both, so pick a count you do not use elsewhere, or set it to 0.
+
+When the chord does not reach the open canvas, `kwin-canvas exit` from a
+terminal or a virtual terminal steps into the location under the screen
+centre; `cancel`, `open`, `toggle` and `status` are the other subcommands.
+It finds the session bus at the user's runtime directory, so it works from
+a VT with no display. The **Canvas** panel applet (`applet/`) is a button
+that fires the Toggle Canvas chord.
+
+To start in the overworld at login there are two ways. The `AutoActivate`
+effect setting opens the canvas as soon as the effect loads, at login and
+when the effect is turned on in a live session. Or an autostart entry runs
+`kwin-canvas open`, which waits up to ten seconds for KWin to load the
+effect; see [docs/install.md](docs/install.md) for the file.
+
+Translucent windows composite correctly in the overworld: a transparent
+Konsole shows the ground and the windows behind it, since the thumbnails
+carry alpha.
 
 The canvas can also replace the Overview hot corner. It appears in System
 Settings under Screen Edges, so any edge or corner can open it; pushing the
@@ -127,14 +166,15 @@ pointer in toggles it. In the nest the top-left corner is preconfigured.
 Everything above is reassignable the KDE way:
 
 - **Global chords** live in System Settings → Shortcuts → KWin: Toggle Canvas,
-  Canvas Home, the pan chords (Canvas Pan Left, Right, Up, Down), Canvas
-  Pan Mode, and the in-canvas actions (Apply, Cancel, Fit, Origin, Zoom In, Zoom Out). Every
+  Canvas Home, the pan chords (Canvas Pan Left, Right, Up, Down), and the
+  in-canvas actions (Enter, Cancel, Fit, Origin, Zoom In, Zoom Out). Every
   Meta+arrow chord is taken by KWin, so the pan chords have no default until
   you give them one.
 - **Effect settings** are in Desktop Effects → Canvas → configure: the opening
-  view, the keys the open canvas listens for, the mouse gestures, snapping, the
-  activity colour scheme (including colour-blind safe sets), hidden frames,
-  and the ground. They are entries in the `[Effect-kwin-canvas]` group of `kwinrc`.
+  view, the keys the open canvas listens for, the mouse gestures, pass-through,
+  snapping, the activity colour scheme (including colour-blind safe sets),
+  hidden frames, and the ground. They are entries in the `[Effect-kwin-canvas]`
+  group of `kwinrc`.
 - **Screen edges** are assigned on the Screen Edges page.
 
 The toolbar inside the canvas sits on the primary display, at any edge or
@@ -181,9 +221,10 @@ facts this rests on, and [docs/testing.md](docs/testing.md) for the harness.
   broke across a Hyprland release when two hooked symbols disappeared.
 
 Both wanted to interact with windows while the view was transformed. This
-attempt drops that requirement: interaction happens at 1:1, and the transformed
-view is for navigation. That single change is what lets it live entirely on the
-public API.
+attempt drops that requirement from the effect: the location is stock KWin,
+the overworld is navigation, and the effect lives entirely on the public
+API. Interaction in the overworld is the optional plugin's job, through
+KWin's exported plugin and input-filter interfaces.
 
 ## License
 

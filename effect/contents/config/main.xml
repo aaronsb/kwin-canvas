@@ -52,8 +52,8 @@
             <default>auto</default>
         </entry>
         <entry name="OpenZoom" type="String">
-            <label>View when the canvas opens: "fit" zooms to every window and frame, "1" stays at 1:1, any other number is a zoom anchored at the screen centre.</label>
-            <default>fit</default>
+            <label>View when the canvas opens: "1" (the default) stays at 1:1, so the open canvas looks like the desktop until you move; "fit" zooms to every window and frame; any other number is a zoom anchored at the screen centre.</label>
+            <default>1</default>
         </entry>
         <entry name="KeyApply" type="String">
             <label>Keys that apply and close, as Qt key names without the Key_ prefix, comma separated.</label>
@@ -152,8 +152,8 @@
             <default>Shift+DoubleClick</default>
         </entry>
         <entry name="ToggleShortcut" type="String">
-            <label>Key sequence that opens and closes the canvas.</label>
-            <default>Meta+Space</default>
+            <label>Key sequence that steps out to the canvas and back in (enters the location under the screen centre).</label>
+            <default>Meta+Ctrl+Alt+Space</default>
         </entry>
         <entry name="HomeShortcut" type="String">
             <label>Key sequence that returns to the canvas origin.</label>
@@ -172,12 +172,8 @@
         <entry name="PanDownShortcut" type="String">
             <default></default>
         </entry>
-        <entry name="PanModeShortcut" type="String">
-            <label>Key sequence held to pan the desktop with the mouse at 1:1: while it is down, every left or middle drag pulls the desktop along; releasing it settles the windows where they landed. Escape slides back.</label>
-            <default></default>
-        </entry>
-        <entry name="PanModePassthrough" type="Bool">
-            <label>In pan mode, hand pointer input over windows to the real windows through the kwin-canvas-passthrough plugin when it is loaded: clicks, drags inside a window, wheel, and raise on click. Title bars and edges stay the canvas's, so a drag there moves the window on the plane.</label>
+        <entry name="Passthrough" type="Bool">
+            <label>While the canvas is open, hand clicks, drags, the wheel and keys over windows to the real windows through the kwin-canvas-passthrough plugin when it is loaded. Title bars, edges, frames, tags and the toolbar stay the canvas's.</label>
             <default>true</default>
         </entry>
         <entry name="PanStep" type="Double">

@@ -9,8 +9,9 @@
 #   ./configure.sh uninstall    turn it off and remove both packages
 #   ./configure.sh enable       turn the effect on in the running session
 #   ./configure.sh disable      turn it off
-#   ./configure.sh status       what is installed, enabled and loaded, and whether the pass-through plugin answers
+#   ./configure.sh status       what is installed, enabled and loaded, and whether the pass-through plugin answers in the running KWin
 #   ./configure.sh plugin       build the optional pass-through plugin against the installed KWin (make plugin)
+#   ./configure.sh exit         step into the location under the screen centre from a terminal (tools/kwin-canvas exit)
 #   ./configure.sh try          a nested KWin with sample windows and the canvas open (make play)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -20,6 +21,7 @@ case "${1:-}" in
     install)   make -s install enable ;;
     uninstall) make -s uninstall ;;
     enable|disable|status|plugin) make -s "$1" ;;
+    exit)      tools/kwin-canvas exit ;;
     try)       make -s play ;;
-    *) sed -n '5,14p' "$0"; exit 1 ;;
+    *) sed -n '5,15p' "$0"; exit 1 ;;
 esac

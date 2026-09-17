@@ -24,7 +24,9 @@ static const QString s_path = QStringLiteral("/KWinCanvas");
 
 CanvasPassthrough::CanvasPassthrough()
     : Plugin()
-    , InputEventFilter(InputFilterOrder::GlobalShortcut)
+    // KWin inserts a filter before the first one of equal or greater weight,
+    // so this lands after the global-shortcut filter and before the effects.
+    , InputEventFilter(InputFilterOrder::Effects)
 {
     input()->installInputEventFilter(this);
     if (!QDBusConnection::sessionBus().registerObject(s_path, this, QDBusConnection::ExportScriptableSlots)) {
@@ -150,10 +152,13 @@ bool CanvasPassthrough::enter(Window *window, const QPointF &canvas)
     const QPointF global = canvas - targetOf(window);
     const QMatrix4x4 toSurface = window->inputTransformation();
     const QPointF local = toSurface.map(global);
-    const auto [surface, childLocal] = root->mapToInputSurface(local);
-    if (!surface) {
+    // A point outside every input region, a server-side title bar for one,
+    // stays the canvas's. mapToInputSurface falls back to the root surface,
+    // so ask inputSurfaceAt first, as Window::hitTest does.
+    if (!root->inputSurfaceAt(local)) {
         return false;
     }
+    const auto [surface, childLocal] = root->mapToInputSurface(local);
     SeatInterface *seat = waylandServer()->seat();
     if (m_hoverSurface != surface) {
         QMatrix4x4 toChild;
@@ -251,6 +256,19 @@ bool CanvasPassthrough::pointerButton(PointerButtonEvent *event)
         m_grabGround = false;
     }
     return consumed;
+}
+
+bool CanvasPassthrough::keyboardKey(KeyboardKeyEvent *event)
+{
+    if (!m_active || event->state == KeyboardKeyState::Repeated) {
+        return false;
+    }
+    SeatInterface *seat = waylandServer()->seat();
+    if (!seat->focusedKeyboardSurface()) {
+        return false;
+    }
+    seat->notifyKeyboardKey(event->nativeScanCode, event->state, event->serial);
+    return true;
 }
 
 bool CanvasPassthrough::pointerAxis(PointerAxisEvent *event)

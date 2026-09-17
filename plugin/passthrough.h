@@ -21,20 +21,23 @@ class SurfaceInterface;
 }
 
 /**
- * Pointer pass-through for the kwin-canvas effect's pan mode.
+ * Input pass-through for the kwin-canvas effect.
  *
- * While the canvas is open it holds every pointer event, and the windows on
- * screen are thumbnails. This filter sits ahead of the effects filter in
- * KWin's input chain. When the canvas tells it the camera (view, zoom, the
- * per-activity targets) and switches it on, it maps each pointer event from
- * the screen onto the plane, finds the topmost drawn window there, and hands
- * the event to that window's surface as if the pointer were over it at 1:1.
- * Events over the ground fall through to the canvas, which pans.
+ * While the canvas is open it holds every input event, and the windows on
+ * screen are thumbnails. This filter sits between KWin's global-shortcut
+ * filter and its effects filter. When the canvas tells it the camera (view,
+ * zoom, the per-activity targets) and switches it on, it maps each pointer
+ * event from the screen onto the plane, finds the topmost drawn window
+ * there, and hands the event to that window's surface as if the pointer were
+ * over it at 1:1. Events over the ground, and over a window's decoration,
+ * fall through to the canvas.
  *
  * A press inside a window's client area raises the window and starts an
  * implicit grab that lasts until every button is up. A press on the ground
  * leaves the whole gesture to the canvas. Hover and wheel go to the window
- * under the pointer. Keys are not touched: they stay the canvas's.
+ * under the pointer. Every key goes to the seat's focused surface, which
+ * KWin keeps on the active window; global chords have already had their
+ * turn, so the canvas's own chord still fires.
  *
  * The canvas talks to it over D-Bus on KWin's bus name, object /KWinCanvas,
  * interface org.kde.kwin.canvas.Passthrough.
@@ -65,6 +68,7 @@ public:
     bool pointerMotion(KWin::PointerMotionEvent *event) override;
     bool pointerButton(KWin::PointerButtonEvent *event) override;
     bool pointerAxis(KWin::PointerAxisEvent *event) override;
+    bool keyboardKey(KWin::KeyboardKeyEvent *event) override;
 
 private:
     QPointF toCanvas(const QPointF &screen) const;

@@ -10,7 +10,10 @@ run_scenario() {
     sleep 0.5; c state
     assert_eq "corner opened the canvas" "$(sget visible)" true
     input move 960 540
-    input key esc
-    sleep 0.3; c state
-    assert_eq "escape closed it" "$(sget visible)" false
+    # Escape would go to the focused window with pass-through live; the
+    # chord enters the location, which moved nothing.
+    printf 'key leftctrl down\nkey leftalt down\nkey space\nkey leftalt up\nkey leftctrl up\n' | input
+    sleep 0.6; c state
+    assert_eq "the chord closed it" "$(sget visible)" false
+    assert_eq "nothing moved" "$(eget KCalc fx)" 100
 }

@@ -1,11 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
-scenario_desc="mouse gestures: double-click focuses a window, double-click a frame goes there, shift+double-click makes an activity over a window"
+scenario_desc="mouse gestures: double-click a title bar focuses the window, double-click a frame goes there, shift+double-click makes an activity over a window"
 screen_of() {
     awk -v cx="$1" -v cy="$2" -v vx="$(sget viewx)" -v vy="$(sget viewy)" -v z="$(sget zoom)" \
         'BEGIN{printf "%d %d", (cx-vx)*z, (cy-vy)*z}'
 }
 dblclick() { printf "move $1 $2\nclick\nsleep 60\nclick\n" | input; }
+# Gestures land on title bars: with pass-through live a click inside a
+# window's client area goes to the app. The nest's KDE apps have server-side
+# title bars about 30 px tall, so canvas y = window top + 12.
 run_scenario() {
     if ! have_input; then skip "fakeinput not built (make tools)"; return; fi
     # A window far outside every frame, then double-click it: the current
@@ -13,14 +16,14 @@ run_scenario() {
     open_1to1
     c "placeby KCalc 6000 4000"
     c extents
-    read -r sx sy <<<"$(screen_of 6240 4210)"
+    read -r sx sy <<<"$(screen_of 6240 4012)"
     dblclick "$sx" "$sy"
     sleep 0.6; c state
     assert_eq "double-click applied" "$(sget visible)" false
     local fx; fx=$(eget KCalc fx)
     assert_true "KCalc on screen after focus" "$(awk -v x="$fx" 'BEGIN{print (x>=0 && x+480<=1920)}')" = 1
     assert_eq "still on Activity 1" "$(eget KCalc activity)" "Activity 1"
-    # The point clicked (KCalc's centre) is under the pointer at 1:1. The
+    # The point clicked (KCalc's title bar centre) is under the pointer at 1:1. The
     # helper truncates the screen position, so allow one screen pixel at
     # the fitted zoom.
     assert_near "clicked point under the pointer" "$fx" $((sx - 240)) 6
@@ -31,12 +34,12 @@ run_scenario() {
     local t2x t2y; t2x=$(tget 1 x); t2y=$(tget 1 y)
     c "placeby KCalc $((t2x + 300)) $((t2y + 300))"
     c extents
-    read -r sx sy <<<"$(screen_of $((t2x + 540)) $((t2y + 510)))"
+    read -r sx sy <<<"$(screen_of $((t2x + 540)) $((t2y + 312)))"
     dblclick "$sx" "$sy"
     sleep 1.2; c state
     assert_eq "entered Activity 2" "$(sget activity)" "Activity 2"
     assert_eq "KCalc on Activity 2" "$(eget KCalc activity)" "Activity 2"
-    assert_near "KCalc's centre under the pointer there" "$(eget KCalc fx)" $((sx - 240)) 6
+    assert_near "KCalc's title bar centre under the pointer there" "$(eget KCalc fx)" $((sx - 240)) 6
     c "activity 0"
     sleep 0.8
     open_1to1
@@ -50,7 +53,7 @@ run_scenario() {
     open_1to1
     c extents
     local t1x t1y kx ky; t1x=$(tget 0 x); t1y=$(tget 0 y); kx=$(eget KCalc fx); ky=$(eget KCalc fy)
-    read -r sx sy <<<"$(screen_of $((t1x + kx + 240)) $((t1y + ky + 210)))"
+    read -r sx sy <<<"$(screen_of $((t1x + kx + 240)) $((t1y + ky + 12)))"
     dblclick "$sx" "$sy"
     sleep 0.6; c state
     assert_eq "desktop target applied" "$(sget visible)" false
@@ -62,7 +65,7 @@ run_scenario() {
     open_1to1
     c "placeby Gwenview 9000 -3000"
     c extents
-    read -r sx sy <<<"$(screen_of 9230 -2790)"
+    read -r sx sy <<<"$(screen_of 9230 -2988)"
     printf "move $sx $sy\nkey shift down\nclick\nsleep 60\nclick\nkey shift up\n" | input
     sleep 1.5; c state
     assert_eq "three activities now" "$(sget nactivities)" 3

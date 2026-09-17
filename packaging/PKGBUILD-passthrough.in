@@ -6,11 +6,11 @@
 # A binary KWin plugin: it is built against the kwin that is installed and
 # KWin loads it only for that exact version, so rebuild it after a kwin
 # upgrade (an AUR helper's rebuild command, or makepkg again). Until then the
-# canvas simply runs pan mode without pass-through.
+# open canvas simply runs without pass-through.
 pkgname=kwin-canvas-passthrough
 pkgver=@VERSION@
 pkgrel=1
-pkgdesc="Pass-through plugin for kwin-canvas: clicks, drags and the wheel reach the real windows in pan mode"
+pkgdesc="Pass-through plugin for kwin-canvas: clicks, drags, the wheel and keys reach the real windows while the canvas is open"
 arch=('x86_64' 'aarch64')
 url="https://github.com/aaronsb/kwin-canvas"
 license=('GPL-2.0-or-later')

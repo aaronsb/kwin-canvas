@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# kwin-canvas from a terminal. The fallback when the canvas is open and the
+# chord does not reach it, from a virtual terminal included.
+#
+#   kwin-canvas exit      step into the location under the screen centre
+#   kwin-canvas cancel    back to where you were, nothing moved
+#   kwin-canvas open      step out to the overworld (waits up to 10 s for the effect at login)
+#   kwin-canvas toggle    step out, or in when the canvas is open
+#   kwin-canvas status    whether the effect is loaded and the plugin answers
+#
+# Commands travel the effect's debug channel: DebugCommand and DebugSeq in
+# the [Effect-kwin-canvas] group of kwinrc, read by the effect when KWin
+# reconfigures it. From a VT the session bus is found at the user's runtime
+# directory; qdbus6 needs the bus and nothing else. `open` retries until the
+# effect is loaded, so an autostart entry can run it before KWin is done.
+set -euo pipefail
+
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+fi
+
+for tool in qdbus6 kreadconfig6 kwriteconfig6; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "kwin-canvas: $tool is missing (Arch: qt6-tools, kconfig)"; exit 1; }
+done
+
+loaded() {
+    qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.isEffectLoaded kwin-canvas 2>/dev/null || echo "no session"
+}
+
+plugin() {
+    qdbus6 org.kde.KWin /KWinCanvas org.kde.kwin.canvas.Passthrough.probe 2>/dev/null || echo "no"
+}
+
+# send DEBUG-COMMAND DESCRIPTION [WAIT-SECONDS]
+# With a wait, polls isEffectLoaded every half second until it is true or the
+# time is up, for an autostart entry that runs before KWin has loaded the effect.
+send() {
+    local state seq tries
+    tries=$(( ${3:-0} * 2 ))
+    state=$(loaded)
+    while [ "$state" != true ] && [ "$tries" -gt 0 ]; do
+        sleep 0.5
+        tries=$((tries - 1))
+        state=$(loaded)
+    done
+    case "$state" in
+        true) ;;
+        false) echo "kwin-canvas: the effect is not loaded in KWin"; exit 1 ;;
+        *) echo "kwin-canvas: KWin did not answer on $DBUS_SESSION_BUS_ADDRESS"; exit 1 ;;
+    esac
+    seq=$(kreadconfig6 --file kwinrc --group Effect-kwin-canvas --key DebugSeq --default 0)
+    seq=$((seq + 1))
+    kwriteconfig6 --file kwinrc --group Effect-kwin-canvas --key DebugCommand "$1"
+    kwriteconfig6 --file kwinrc --group Effect-kwin-canvas --key DebugSeq "$seq"
+    qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.reconfigureEffect kwin-canvas >/dev/null
+    echo "kwin-canvas: $2"
+}
+
+case "${1:-}" in
+    exit)   send enter  "entering the location under the screen centre" ;;
+    cancel) send cancel "back to where you were, nothing moved" ;;
+    open)   send open   "stepping out to the overworld" 10 ;;
+    toggle) send toggle "toggled" ;;
+    status) echo "kwin-canvas: effect loaded: $(loaded); pass-through plugin: $(plugin)" ;;
+    *) sed -n '8,12p' "$0"; exit 1 ;;
+esac

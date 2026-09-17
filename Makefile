@@ -1,10 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Aaron Bockelie <aaronsb@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
-# kwin-canvas — an infinite canvas for KWin as a QML effect plus a ground wallpaper.
+# kwin-canvas — an infinite canvas for KWin as a QML effect plus a ground wallpaper,
+# a panel applet and a terminal CLI.
 # `make` alone prints this help. Targets are documented with a trailing `## text`.
 
 EFFECT_ID   := kwin-canvas
 WALL_ID     := kwin-canvas-ground
+APPLET_ID   := org.kde.kwin.canvas.toggle
+CLI         := tools/kwin-canvas
+BIN_DIR     := $(HOME)/.local/bin
 PLUGIN_ID   := kwin_canvas_passthrough
 BUILD       := build
 PLUGIN_BUILD := $(BUILD)/plugin
@@ -40,38 +44,47 @@ deps-install: ## Install missing dependencies with pacman (asks for sudo)
 
 # ---- packages ---------------------------------------------------------------
 stage:
-	rm -rf $(BUILD)/effect $(BUILD)/wallpaper
+	rm -rf $(BUILD)/effect $(BUILD)/wallpaper $(BUILD)/applet
 	mkdir -p $(BUILD)
 	cp -r effect $(BUILD)/effect
 	cp -r wallpaper $(BUILD)/wallpaper
+	cp -r applet $(BUILD)/applet
 	cp shared/Ground.qml $(BUILD)/effect/contents/ui/Ground.qml
 	cp shared/Ground.qml $(BUILD)/wallpaper/contents/ui/Ground.qml
 
-install: stage ## Install the effect and the ground wallpaper as user packages (~/.local/share)
+install: stage ## Install the effect, the ground wallpaper and the applet as user packages, and the CLI into ~/.local/bin
 	@$(KPT) --type KWin/Effect --upgrade $(BUILD)/effect >/dev/null 2>&1 || $(KPT) --type KWin/Effect --install $(BUILD)/effect >/dev/null
 	@$(KPT) --type Plasma/Wallpaper --upgrade $(BUILD)/wallpaper >/dev/null 2>&1 || $(KPT) --type Plasma/Wallpaper --install $(BUILD)/wallpaper >/dev/null
-	@echo "installed for $$USER: $(EFFECT_ID), $(WALL_ID)"
+	@$(KPT) --type Plasma/Applet --upgrade $(BUILD)/applet >/dev/null 2>&1 || $(KPT) --type Plasma/Applet --install $(BUILD)/applet >/dev/null
+	@mkdir -p $(BIN_DIR) && install -m 755 $(CLI) $(BIN_DIR)/kwin-canvas
+	@echo "installed for $$USER: $(EFFECT_ID), $(WALL_ID), $(APPLET_ID), $(BIN_DIR)/kwin-canvas"
 
-uninstall: disable ## Turn the effect off and remove both user packages
+uninstall: disable ## Turn the effect off and remove the user packages and the CLI
 	@$(KPT) --type KWin/Effect --remove $(EFFECT_ID) >/dev/null 2>&1 && echo "removed: $(EFFECT_ID)" || echo "not installed: $(EFFECT_ID)"
 	@$(KPT) --type Plasma/Wallpaper --remove $(WALL_ID) >/dev/null 2>&1 && echo "removed: $(WALL_ID)" || echo "not installed: $(WALL_ID)"
+	@$(KPT) --type Plasma/Applet --remove $(APPLET_ID) >/dev/null 2>&1 && echo "removed: $(APPLET_ID)" || echo "not installed: $(APPLET_ID)"
+	@rm -f $(BIN_DIR)/kwin-canvas
 
 # System-wide layout, the same paths kpackagetool6 --global uses; KPackage
 # finds them through XDG_DATA_DIRS. DESTDIR is for distro packaging.
 SYS_EFFECT  := $(DESTDIR)/usr/share/kwin/effects/$(EFFECT_ID)
 SYS_WALL    := $(DESTDIR)/usr/share/plasma/wallpapers/$(WALL_ID)
+SYS_APPLET  := $(DESTDIR)/usr/share/plasma/plasmoids/$(APPLET_ID)
+SYS_BIN     := $(DESTDIR)/usr/bin/kwin-canvas
 
-install-system: stage ## Copy both packages into DESTDIR/usr/share (for a PKGBUILD or a .deb rule)
-	rm -rf $(SYS_EFFECT) $(SYS_WALL)
-	mkdir -p $(dir $(SYS_EFFECT)) $(dir $(SYS_WALL))
+install-system: stage ## Copy the three packages into DESTDIR/usr/share and the CLI into DESTDIR/usr/bin (for a PKGBUILD or a .deb rule)
+	rm -rf $(SYS_EFFECT) $(SYS_WALL) $(SYS_APPLET)
+	mkdir -p $(dir $(SYS_EFFECT)) $(dir $(SYS_WALL)) $(dir $(SYS_APPLET)) $(dir $(SYS_BIN))
 	cp -r $(BUILD)/effect $(SYS_EFFECT)
 	cp -r $(BUILD)/wallpaper $(SYS_WALL)
-	find $(SYS_EFFECT) $(SYS_WALL) -type d -exec chmod 755 {} +
-	find $(SYS_EFFECT) $(SYS_WALL) -type f -exec chmod 644 {} +
-	@echo "installed: $(SYS_EFFECT) $(SYS_WALL)"
+	cp -r $(BUILD)/applet $(SYS_APPLET)
+	find $(SYS_EFFECT) $(SYS_WALL) $(SYS_APPLET) -type d -exec chmod 755 {} +
+	find $(SYS_EFFECT) $(SYS_WALL) $(SYS_APPLET) -type f -exec chmod 644 {} +
+	install -m 755 $(CLI) $(SYS_BIN)
+	@echo "installed: $(SYS_EFFECT) $(SYS_WALL) $(SYS_APPLET) $(SYS_BIN)"
 
 uninstall-system: ## Remove the system-wide copies
-	rm -rf $(SYS_EFFECT) $(SYS_WALL)
+	rm -rf $(SYS_EFFECT) $(SYS_WALL) $(SYS_APPLET) $(SYS_BIN)
 
 reload: install ## Reinstall and reload the effect in the live session (QML changes need a KWin restart)
 	-$(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect $(EFFECT_ID)
@@ -83,7 +96,7 @@ enable: ## Turn the effect on in the live session (disable the stock Zoom effect
 	@if $(QDBUS) org.kde.KWin /KWin org.kde.KWin.supportInformation >/dev/null 2>&1; then \
 	    $(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect $(EFFECT_ID) >/dev/null; \
 	    if [ "$$($(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.isEffectLoaded $(EFFECT_ID))" = true ]; then \
-	        echo "enabled and loaded. Meta+Space opens the canvas; Esc closes it without moving anything."; \
+	        echo "enabled and loaded. Meta+Ctrl+Alt+Space steps out to the overworld and back in; Esc cancels."; \
 	    else \
 	        echo "enabled in kwinrc but KWin did not load it; see: journalctl --user -b _COMM=kwin_wayland | grep -i canvas"; exit 1; \
 	    fi; \
@@ -97,16 +110,18 @@ disable: ## Turn the effect off in the live session
 status: ## Show whether the packages are installed, enabled and loaded
 	@echo "effect package:    $$($(KPT) --type KWin/Effect --list 2>/dev/null | grep -x $(EFFECT_ID) || echo not installed)"
 	@echo "wallpaper package: $$($(KPT) --type Plasma/Wallpaper --list 2>/dev/null | grep -x $(WALL_ID) || echo not installed)"
+	@echo "applet package:    $$($(KPT) --type Plasma/Applet --list 2>/dev/null | grep -x $(APPLET_ID) || echo not installed)"
+	@echo "cli:               $$(command -v kwin-canvas 2>/dev/null || echo not on PATH)"
 	@echo "enabled in kwinrc: $$(kreadconfig6 --file kwinrc --group Plugins --key $(EFFECT_ID)Enabled --default false)"
 	@echo "loaded in KWin:    $$($(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.isEffectLoaded $(EFFECT_ID) 2>/dev/null || echo no session)"
 	@$(MAKE) -s plugin-status
 
 # ---- pass-through plugin (optional) -----------------------------------------
-# A binary KWin plugin that hands pointer input over windows to the real
-# windows while the canvas is in pan mode. Built against the installed KWin;
-# KWin loads it only when the versions match, and the effect only uses it
-# when it answers the probe, so a stale build means pan mode without
-# pass-through, never a broken canvas.
+# A binary KWin plugin that hands pointer and key input to the real windows
+# while the canvas is open. Built against the installed KWin; KWin loads it
+# only when the versions match, and the effect only uses it when it answers
+# the probe, so a stale build means an overworld without pass-through, never
+# a broken canvas.
 plugin: ## Build the optional pass-through plugin against the installed KWin (build/plugin/bin/kwin/plugins)
 	cmake -S plugin -B $(PLUGIN_BUILD) -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr >/dev/null
 	cmake --build $(PLUGIN_BUILD) -j | grep -E "error|warning:|Built target $(PLUGIN_ID)$$" || true
@@ -184,14 +199,16 @@ video: ## Assemble build/demo frames into demo.mp4 and demo.gif (run `make demo`
 	demo/demo.sh --video-only
 
 # ---- distribution -----------------------------------------------------------
-dist: stage ## Tarballs of both packages for kpackagetool6 or the KDE Store (dist/)
+dist: stage ## Tarballs of the three packages for kpackagetool6 or the KDE Store (dist/)
 	rm -rf $(DIST); mkdir -p $(DIST)
 	tar -C $(BUILD)/effect -czf $(DIST)/kwin-canvas-$(VERSION).kwineffect.tar.gz .
 	tar -C $(BUILD)/wallpaper -czf $(DIST)/kwin-canvas-ground-$(VERSION).tar.gz .
+	tar -C $(BUILD)/applet -czf $(DIST)/kwin-canvas-toggle-$(VERSION).tar.gz .
 	@cd $(DIST) && sha256sum *.tar.gz > SHA256SUMS && cat SHA256SUMS
 	@echo
 	@echo "install:  kpackagetool6 --type KWin/Effect --install $(DIST)/kwin-canvas-$(VERSION).kwineffect.tar.gz"
 	@echo "          kpackagetool6 --type Plasma/Wallpaper --install $(DIST)/kwin-canvas-ground-$(VERSION).tar.gz"
+	@echo "          kpackagetool6 --type Plasma/Applet --install $(DIST)/kwin-canvas-toggle-$(VERSION).tar.gz"
 
 pkgbuild: ## Write dist/PKGBUILD (effect) and dist/passthrough/PKGBUILD (plugin) for the AUR at this VERSION
 	mkdir -p $(DIST)/passthrough
