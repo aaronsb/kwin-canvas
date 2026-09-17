@@ -1,3 +1,28 @@
+0.3.0 is about moving at 1:1 and reaching into windows from the canvas.
+
+- Panning at 1:1 is a slide: the effect opens for a moment with no chrome,
+  this activity's windows glide, their new positions are written once. Pan
+  chords (Canvas Pan Left, Right, Up, Down; no default chord) step half a
+  screen; a three-finger touchpad swipe follows the fingers.
+- Pan mode: hold a chord (Canvas Pan Mode; no default chord) and drag the
+  desktop with the mouse as often as you like, wheel to zoom out and see the
+  whole plane, let go to settle with the point under the pointer kept, Esc
+  to slide back.
+- The pass-through plugin, `kwin-canvas-passthrough`, optional and built
+  against your KWin: in pan mode, clicks, drags and the wheel reach the
+  real windows, a click raises, title bars and edges move windows on the
+  plane. Its own AUR package; rebuild it after a KWin upgrade.
+- Double-click a window: the window's activity takes the viewport, and a
+  window in another activity's frame takes you there. `FocusTarget` chooses
+  between the point you clicked staying under the pointer (`window`) and a
+  frame staying put (`desktop`).
+- Dragging an activity's frames carries its windows along
+  (`FramesCarryWindows`, on by default).
+- Activation-follow moves minimized and other-desktop windows of the
+  activity too, so the plane stays whole under a pan.
+- The test nest renders to KWin's virtual backend, so the scenarios keep
+  their timing when the nest is not on screen.
+
 0.2.0 makes activities the frame axis and adds a short install path.
 
 - Every activity is a group of monitor frames on the plane, in KDE's output
