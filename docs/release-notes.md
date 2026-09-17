@@ -1,3 +1,7 @@
+0.3.1 fixes where the pass-through plugin installs: Qt 6's plugin directory
+(`/usr/lib/qt6/plugins/kwin/plugins`), which KWin searches; 0.3.0's package
+put it under Qt 5's. Nothing else changed.
+
 0.3.0 is about moving at 1:1 and reaching into windows from the canvas.
 
 - Panning at 1:1 is a slide: the effect opens for a moment with no chrome,

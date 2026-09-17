@@ -50,8 +50,8 @@ KWin; rebuild it after a KWin upgrade. From a release tarball with no
 checkout:
 
 ```bash
-kpackagetool6 --type KWin/Effect --install kwin-canvas-0.3.0.kwineffect.tar.gz
-kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.3.0.tar.gz
+kpackagetool6 --type KWin/Effect --install kwin-canvas-0.3.1.kwineffect.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.3.1.tar.gz
 ```
 
 then enable **Canvas** in System Settings → Desktop Effects. From a checkout:

@@ -16,12 +16,15 @@ set(QT_DEFAULT_MAJOR_VERSION 6)
 
 find_package(ECM REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
-include(KDEInstallDirs)
+# Qt first: the install dirs ask Qt where its plugin directory is, and the
+# plugin must go there (lib/qt6/plugins) for KWin to find it.
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets DBus Qml Quick)
+set(KDE_INSTALL_USE_QT_SYS_PATHS ON)
+include(KDEInstallDirs6)
 include(KDECMakeSettings)
 # Plugins land in build/plugin/bin/kwin/plugins, a Qt plugin path for the nest.
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets DBus Qml Quick)
 find_package(KF6CoreAddons REQUIRED)
 find_package(KWin REQUIRED)
 
