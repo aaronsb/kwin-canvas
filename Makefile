@@ -5,7 +5,10 @@
 
 EFFECT_ID   := kwin-canvas
 WALL_ID     := kwin-canvas-ground
+PLUGIN_ID   := kwin_canvas_passthrough
 BUILD       := build
+PLUGIN_BUILD := $(BUILD)/plugin
+AUR_PT_DIR  := $(BUILD)/aur-passthrough
 DIST        := dist
 VERSION     := $(shell cat VERSION)
 KPT         := kpackagetool6
@@ -16,7 +19,8 @@ PYTHON      := python3
 .DEFAULT_GOAL := help
 .PHONY: help deps deps-install install uninstall install-system uninstall-system reload enable disable status \
         tools fixtures play nest nest-down nest-clients nest-fixtures nest-reload nest-shot nest-log nest-clean nest-cmd \
-        test golden demo video clean stage dist pkgbuild aur release tour
+        test golden demo video clean stage dist pkgbuild aur aur-passthrough release tour \
+        plugin plugin-try plugin-install-system plugin-status
 
 help: ## Show this help
 	@echo "kwin-canvas"
@@ -95,6 +99,31 @@ status: ## Show whether the packages are installed, enabled and loaded
 	@echo "wallpaper package: $$($(KPT) --type Plasma/Wallpaper --list 2>/dev/null | grep -x $(WALL_ID) || echo not installed)"
 	@echo "enabled in kwinrc: $$(kreadconfig6 --file kwinrc --group Plugins --key $(EFFECT_ID)Enabled --default false)"
 	@echo "loaded in KWin:    $$($(QDBUS) org.kde.KWin /Effects org.kde.kwin.Effects.isEffectLoaded $(EFFECT_ID) 2>/dev/null || echo no session)"
+	@$(MAKE) -s plugin-status
+
+# ---- pass-through plugin (optional) -----------------------------------------
+# A binary KWin plugin that hands pointer input over windows to the real
+# windows while the canvas is in pan mode. Built against the installed KWin;
+# KWin loads it only when the versions match, and the effect only uses it
+# when it answers the probe, so a stale build means pan mode without
+# pass-through, never a broken canvas.
+plugin: ## Build the optional pass-through plugin against the installed KWin (build/plugin/bin/kwin/plugins)
+	cmake -S plugin -B $(PLUGIN_BUILD) -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr >/dev/null
+	cmake --build $(PLUGIN_BUILD) -j | grep -E "error|warning:|Built target $(PLUGIN_ID)$$" || true
+
+plugin-try: ## Build the plugin when KWin's headers and cmake are here; otherwise say so and carry on
+	@if [ -f /usr/include/kwin/plugin.h ] && command -v cmake >/dev/null 2>&1; then $(MAKE) -s plugin; \
+	else echo "pass-through plugin: KWin headers or cmake missing, skipped"; fi
+
+plugin-install-system: plugin ## Install the plugin into DESTDIR/usr/lib/qt6/plugins/kwin/plugins (for a PKGBUILD)
+	DESTDIR=$(DESTDIR) cmake --install $(PLUGIN_BUILD) >/dev/null
+	@echo "installed: $(DESTDIR)/usr/lib/qt6/plugins/kwin/plugins/$(PLUGIN_ID).so"
+
+plugin-status: ## Whether the pass-through plugin is built, installed, and answering in the running KWin
+	@echo "plugin built:      $$([ -f $(PLUGIN_BUILD)/bin/kwin/plugins/$(PLUGIN_ID).so ] && echo yes || echo no)"
+	@echo "plugin installed:  $$(ls /usr/lib/qt6/plugins/kwin/plugins/$(PLUGIN_ID).so 2>/dev/null || echo no)"
+	@echo "running KWin:      $$(kwin_wayland --version 2>/dev/null | head -1 || echo unknown)"
+	@echo "plugin answers:    $$($(QDBUS) org.kde.KWin /KWinCanvas org.kde.kwin.canvas.Passthrough.probe 2>/dev/null || echo 'no: not loaded (built for another KWin?), or no session')"
 
 # ---- tools and fixtures -----------------------------------------------------
 tools: ## Build the fake-input client used by tests and demos (build/tools/fakeinput)
@@ -139,7 +168,7 @@ nest-cmd: ## Send a debug command: make nest-cmd CMD="zoom 0.4 960 540"
 	$(NEST) cmd "$(CMD)"
 
 # ---- tests and demos --------------------------------------------------------
-test: install fixtures ## Run the scenarios against a dedicated test nest (NEST_NAME=test)
+test: install fixtures plugin-try ## Run the scenarios against a dedicated test nest (NEST_NAME=test)
 	tests/run.sh $(ARGS)
 
 golden: install fixtures ## Re-record the golden screenshots from the current build
@@ -164,11 +193,13 @@ dist: stage ## Tarballs of both packages for kpackagetool6 or the KDE Store (dis
 	@echo "install:  kpackagetool6 --type KWin/Effect --install $(DIST)/kwin-canvas-$(VERSION).kwineffect.tar.gz"
 	@echo "          kpackagetool6 --type Plasma/Wallpaper --install $(DIST)/kwin-canvas-ground-$(VERSION).tar.gz"
 
-pkgbuild: ## Write dist/PKGBUILD for the AUR from packaging/PKGBUILD.in at this VERSION
-	mkdir -p $(DIST)
+pkgbuild: ## Write dist/PKGBUILD (effect) and dist/passthrough/PKGBUILD (plugin) for the AUR at this VERSION
+	mkdir -p $(DIST)/passthrough
 	sed 's/@VERSION@/$(VERSION)/g' packaging/PKGBUILD.in > $(DIST)/PKGBUILD
 	cp packaging/kwin-canvas.install $(DIST)/kwin-canvas.install
-	@echo "dist/PKGBUILD written; after the v$(VERSION) tag is on GitHub: cd $(DIST) && updpkgsums && makepkg -si"
+	sed 's/@VERSION@/$(VERSION)/g' packaging/PKGBUILD-passthrough.in > $(DIST)/passthrough/PKGBUILD
+	cp packaging/kwin-canvas-passthrough.install $(DIST)/passthrough/kwin-canvas-passthrough.install
+	@echo "dist/PKGBUILD and dist/passthrough/PKGBUILD written; after the v$(VERSION) tag is on GitHub: updpkgsums && makepkg -si in each"
 
 # The AUR repository is a git remote of its own; the package there is the
 # generated PKGBUILD, its install file and .SRCINFO, with checksums taken
@@ -182,6 +213,14 @@ aur: pkgbuild ## Publish or update the AUR package from the v$(VERSION) tag (run
 	cd $(AUR_DIR) && git add PKGBUILD kwin-canvas.install .SRCINFO && git commit -q -m "kwin-canvas $(VERSION)" && git push -q origin HEAD:master
 	@echo "published: https://aur.archlinux.org/packages/kwin-canvas"
 
+aur-passthrough: pkgbuild ## Publish or update the AUR package for the pass-through plugin (run after make release)
+	@[ -d $(AUR_PT_DIR)/.git ] || git clone -q ssh://aur@aur.archlinux.org/kwin-canvas-passthrough.git $(AUR_PT_DIR)
+	@cd $(AUR_PT_DIR) && git pull -q --rebase 2>/dev/null || true
+	cp $(DIST)/passthrough/PKGBUILD $(DIST)/passthrough/kwin-canvas-passthrough.install $(AUR_PT_DIR)/
+	cd $(AUR_PT_DIR) && updpkgsums && makepkg --printsrcinfo > .SRCINFO
+	cd $(AUR_PT_DIR) && git add PKGBUILD kwin-canvas-passthrough.install .SRCINFO && git commit -q -m "kwin-canvas-passthrough $(VERSION)" && git push -q origin HEAD:master
+	@echo "published: https://aur.archlinux.org/packages/kwin-canvas-passthrough"
+
 release: dist ## Tag v$(VERSION) and publish a GitHub release with the tarballs (needs a clean tree)
 	@git diff --quiet || { echo "uncommitted changes"; exit 1; }
 	git tag -a v$(VERSION) -m "kwin-canvas $(VERSION)"
@@ -190,3 +229,4 @@ release: dist ## Tag v$(VERSION) and publish a GitHub release with the tarballs 
 
 clean: ## Remove build output
 	rm -rf $(BUILD) $(DIST)
+	@echo "the AUR checkouts under build/ went with it; make aur clones them again" 

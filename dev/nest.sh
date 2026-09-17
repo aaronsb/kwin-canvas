@@ -5,7 +5,8 @@
 #
 # Runs a second kwin_wayland as a window inside the live session, on its own
 # D-Bus session bus and with its own XDG_CONFIG_HOME, so the effect can be
-# enabled, driven and screenshotted without touching the real desktop.
+# enabled, driven and screenshotted without touching the real desktop. The
+# pass-through plugin is picked up from build/plugin/bin when it is built.
 #
 #   dev/nest.sh up            start nested KWin with the effect enabled
 #   dev/nest.sh down          stop it
@@ -25,13 +26,18 @@
 # NEST_NAME=foo runs a second, independent nest (own socket, bus, config, log).
 # NEST_WALLPAPER=0 keeps the plain grid instead of tiling the fixture wallpaper.
 # NEST_OUTPUTS=2 gives the nest two side-by-side outputs (one frame each).
+# NEST_VIRTUAL=1 renders to KWin's virtual framebuffer instead of a window on
+# the live desktop: nothing to look at, but frames keep coming at full rate
+# when the nest would be hidden or covered. The tests use it.
 # The nest has its own activity manager with two seeded activities, so the
 # frame groups and the send-to menu have something to show.
 # The file is sourceable: `source dev/nest.sh` exposes every function without
 # running a command, which is how tests/lib.sh reuses it.
 #
 # Debug commands: open commit cancel toggle home extents state
-#                 pan DX DY | zoom Z [X Y] | shift DX DY
+#                 pan DX DY | zoom Z [X Y] | shift DX DY | slide DX DY
+#                 panstep DX DY | swipe DX DY PROGRESS|end|cancel
+#                 panmode [end|cancel]
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -42,6 +48,7 @@ SOCKET=wayland-$NEST_NAME
 WIDTH=${NEST_WIDTH:-1920}
 HEIGHT=${NEST_HEIGHT:-1080}
 OUTPUTS=${NEST_OUTPUTS:-1}
+VIRTUAL=${NEST_VIRTUAL:-0}
 LOG=$STATE/kwin.log
 FIXTURES=$HERE/tests/fixtures
 # Fixed ids for the two seeded activities, so tests can name them.
@@ -76,6 +83,11 @@ BorderActivate=7
 DebugSeq=0
 ToggleShortcut=Ctrl+Alt+Space
 HomeShortcut=Ctrl+Alt+Home
+PanLeftShortcut=Ctrl+Alt+Left
+PanRightShortcut=Ctrl+Alt+Right
+PanUpShortcut=Ctrl+Alt+Up
+PanDownShortcut=Ctrl+Alt+Down
+PanModeShortcut=Ctrl+Alt+P
 
 [Compositing]
 Backend=OpenGL
@@ -166,10 +178,11 @@ up() {
         setsid -f env XDG_CONFIG_HOME="$STATE/config" XDG_STATE_HOME="$STATE/state" \
             XDG_DATA_HOME="$STATE/data" XDG_DATA_DIRS="$HOME/.local/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
             QT_LOGGING_TO_CONSOLE=1 KWIN_WAYLAND_NO_PERMISSION_CHECKS=1 \
+            QT_PLUGIN_PATH="$HERE/build/plugin/bin${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}" \
             dbus-run-session -- bash -c '
             echo "$PPID" > "$0/pid"
             echo "$DBUS_SESSION_BUS_ADDRESS" > "$0/bus"
-            exec kwin_wayland --width '"$WIDTH"' --height '"$HEIGHT"' --output-count '"$OUTPUTS"' --xwayland --no-lockscreen --socket '"$SOCKET"'
+            exec kwin_wayland '"$([ "$VIRTUAL" = 1 ] && echo --virtual)"' --width '"$WIDTH"' --height '"$HEIGHT"' --output-count '"$OUTPUTS"' --xwayland --no-lockscreen --socket '"$SOCKET"'
         ' "$STATE" > "$LOG" 2>&1
     )
     for _ in $(seq 1 50); do

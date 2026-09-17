@@ -87,6 +87,14 @@
             <label>Gesture on a window that applies with it focused: Click or DoubleClick, with optional Shift+, Ctrl+, Alt+, Meta+.</label>
             <default>DoubleClick</default>
         </entry>
+        <entry name="FramesCarryWindows" type="Bool">
+            <label>Dragging an activity's frames on the canvas carries that activity's windows with them, keeping their positions on screen. Off, the frames move over the windows.</label>
+            <default>true</default>
+        </entry>
+        <entry name="FocusTarget" type="String">
+            <label>Where the viewport goes when a double-click applies with a window focused. "window": the point clicked stays under the pointer at 1:1 and the activity's frames move to make that so. "desktop": a window inside a frame leaves the frame where it is; one outside every frame gets the frame centred on it.</label>
+            <default>window</default>
+        </entry>
         <entry name="MouseGotoActivity" type="String">
             <label>Gesture on an activity frame that applies with that activity current.</label>
             <default>DoubleClick</default>
@@ -150,6 +158,39 @@
         <entry name="HomeShortcut" type="String">
             <label>Key sequence that returns to the canvas origin.</label>
             <default>Meta+Ctrl+Space</default>
+        </entry>
+        <entry name="PanLeftShortcut" type="String">
+            <label>Key sequence that pans one step left at 1:1 (a slide), or moves the open canvas's camera. No default: every Meta+arrow chord is taken by KWin.</label>
+            <default></default>
+        </entry>
+        <entry name="PanRightShortcut" type="String">
+            <default></default>
+        </entry>
+        <entry name="PanUpShortcut" type="String">
+            <default></default>
+        </entry>
+        <entry name="PanDownShortcut" type="String">
+            <default></default>
+        </entry>
+        <entry name="PanModeShortcut" type="String">
+            <label>Key sequence held to pan the desktop with the mouse at 1:1: while it is down, every left or middle drag pulls the desktop along; releasing it settles the windows where they landed. Escape slides back.</label>
+            <default></default>
+        </entry>
+        <entry name="PanModePassthrough" type="Bool">
+            <label>In pan mode, hand pointer input over windows to the real windows through the kwin-canvas-passthrough plugin when it is loaded: clicks, drags inside a window, wheel, and raise on click. Title bars and edges stay the canvas's, so a drag there moves the window on the plane.</label>
+            <default>true</default>
+        </entry>
+        <entry name="PanStep" type="Double">
+            <label>One pan step as a fraction of the screen (0.05 to 1).</label>
+            <default>0.5</default>
+        </entry>
+        <entry name="PanDuration" type="Int">
+            <label>Length of the slide animation in milliseconds. 0 jumps.</label>
+            <default>220</default>
+        </entry>
+        <entry name="PanSwipeFingers" type="Int">
+            <label>Touchpad swipe with this many fingers pans at 1:1, following the fingers. 0 turns it off. KWin's own three-finger swipes switch desktops and four-finger swipes open Overview; a matching count fires both.</label>
+            <default>3</default>
         </entry>
         <entry name="ActivityGap" type="Int">
             <label>Gap in canvas pixels between the frame groups of neighbouring activities when first laid out.</label>

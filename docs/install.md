@@ -32,13 +32,13 @@ upgrade, log out and in once: KWin keeps the version it compiled at login.
 
 ### From the release tarballs
 
-1. Download `kwin-canvas-0.2.0.kwineffect.tar.gz` from
+1. Download `kwin-canvas-0.3.0.kwineffect.tar.gz` from
    https://github.com/aaronsb/kwin-canvas/releases/latest.
    The wallpaper tarball is optional; see "The ground wallpaper" below.
 2. Install the effect as a user package:
 
    ```bash
-   kpackagetool6 --type KWin/Effect --install kwin-canvas-0.2.0.kwineffect.tar.gz
+   kpackagetool6 --type KWin/Effect --install kwin-canvas-0.3.0.kwineffect.tar.gz
    ```
 
    To update later, replace `--install` with `--upgrade`.
@@ -77,11 +77,30 @@ the same thing, and `make` alone lists every target.
 `/usr/share/kwin/effects` and `/usr/share/plasma/wallpapers` under that
 root, the same places `kpackagetool6 --global` uses, with no session calls.
 `make pkgbuild` writes `dist/PKGBUILD` for the AUR from
-`packaging/PKGBUILD.in`, and `make aur` publishes it after `make release`
+`packaging/PKGBUILD.in`, plus `dist/passthrough/PKGBUILD` for the plugin,
+and `make aur` and `make aur-passthrough` publish them after `make release`
 has put the tag on GitHub. Users then enable the effect
 in Desktop Effects or with step 3's D-Bus call. KWin keeps the version it
 compiled at login, so an upgrade takes effect at the next login; the package
 says so after installing.
+
+### The pass-through plugin
+
+Optional. It lets pointer input reach the real windows while the canvas is in pan mode. On Arch:
+
+```bash
+yay -S kwin-canvas-passthrough
+```
+
+From a checkout, with KWin's headers, cmake and extra-cmake-modules installed:
+
+```bash
+make plugin                              # build/plugin/bin/kwin/plugins/kwin_canvas_passthrough.so
+sudo make plugin-install-system          # into /usr/lib/qt6/plugins/kwin/plugins
+make plugin-status                       # built, installed, and whether the running KWin answers
+```
+
+KWin loads binary plugins at login and only when they were built for the running KWin version, so log out and in after installing, and rebuild the package after a KWin upgrade. The canvas asks the plugin over D-Bus each time pan mode starts; when there is no answer, pan mode runs without pass-through. Nothing else changes.
 
 ## First use
 
@@ -115,13 +134,13 @@ grid at 1:1 and scrolls it as you pan, so the desktop itself shows where you
 are on the plane. Install it and pick **Canvas Ground** in Desktop Settings:
 
 ```bash
-kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.2.0.tar.gz
+kpackagetool6 --type Plasma/Wallpaper --install kwin-canvas-ground-0.3.0.tar.gz
 ```
 
 Without it, your normal wallpaper stays, and the frames in the canvas show
 it.
 
-## Known limits in 0.2.0
+## Known limits in 0.3.0
 
 - The monitor frames reproduce KDE's display arrangement and the canvas
   never changes it. Rearrange or resize displays in System Settings →

@@ -1,0 +1,9 @@
+{
+    "KPlugin": {
+        "Name": "Canvas pass-through",
+        "Description": "Lets pointer input reach the real windows while the kwin-canvas effect is in pan mode.",
+        "EnabledByDefault": true,
+        "License": "GPL-2.0-or-later",
+        "Authors": [{ "Name": "Aaron Bockelie", "Email": "aaronsb@gmail.com" }]
+    }
+}

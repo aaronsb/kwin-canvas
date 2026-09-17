@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 scenario_desc="activating an off-screen window pans the plane to it"
 run_scenario() {
+    # Activation only fires for a window that is not already active.
+    c "activate Dolphin"
     c "shift 3000 0"
     assert_eq "KCalc off-screen" "$(eget KCalc fx)" 3100
     c "activate KCalc"

@@ -9,7 +9,8 @@
 #   ./configure.sh uninstall    turn it off and remove both packages
 #   ./configure.sh enable       turn the effect on in the running session
 #   ./configure.sh disable      turn it off
-#   ./configure.sh status       what is installed, enabled and loaded
+#   ./configure.sh status       what is installed, enabled and loaded, and whether the pass-through plugin answers
+#   ./configure.sh plugin       build the optional pass-through plugin against the installed KWin (make plugin)
 #   ./configure.sh try          a nested KWin with sample windows and the canvas open (make play)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -18,7 +19,7 @@ command -v make >/dev/null 2>&1 || { echo "make is missing (Arch: pacman -S make
 case "${1:-}" in
     install)   make -s install enable ;;
     uninstall) make -s uninstall ;;
-    enable|disable|status) make -s "$1" ;;
+    enable|disable|status|plugin) make -s "$1" ;;
     try)       make -s play ;;
-    *) sed -n '5,13p' "$0"; exit 1 ;;
+    *) sed -n '5,14p' "$0"; exit 1 ;;
 esac

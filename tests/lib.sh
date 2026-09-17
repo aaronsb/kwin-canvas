@@ -7,6 +7,9 @@
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export NEST_NAME=${NEST_NAME:-test}
+# Offscreen: a nest that is a window on the live desktop slows to a crawl when
+# that window is covered, and every timing in the scenarios goes with it.
+export NEST_VIRTUAL=${NEST_VIRTUAL:-1}
 # shellcheck source=../dev/nest.sh
 source "$HERE/dev/nest.sh"
 # nest.sh sets -e for its own use; a test runner must survive failing checks.

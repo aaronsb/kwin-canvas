@@ -59,6 +59,22 @@ KWin.SceneEffect {
     property var entries: []
     property int revision: 0
     property bool helpOpen: false
+    // Quiet: open at 1:1 for a slide, with no frames, tags, toolbar or input.
+    property bool quiet: false
+    readonly property bool canvasOpen: visible && !quiet
+    // Pan mode: quiet, with the pointer live. Held chord, drag the desktop.
+    property bool panMode: false
+    property int panModeKey: 0
+    property int panModeMods: 0
+    // Zoomed out while quiet (the wheel in pan mode): the whole plane shows,
+    // frames and every activity's windows, still with no tags or toolbar.
+    readonly property bool quietPlane: quiet && zoom < 0.999
+    // Pass-through: the optional binary plugin hands pointer events over
+    // windows to the real windows while pan mode is on. Live once it has
+    // answered the probe for this pan mode; the camera is published to it.
+    readonly property bool passthroughWanted: configuration.PanModePassthrough !== false
+    property bool passthroughLive: false
+    property string passthroughVersion: ""
     // Selection: window internalId -> true. selectionRev bumps on every change.
     property var selected: ({})
     property int selectionRev: 0
@@ -102,7 +118,29 @@ KWin.SceneEffect {
         return out;
     }
 
+    // The pan-mode chord's own keys: releasing any of them ends the mode.
+    function readPanModeChord() {
+        let key = 0, mods = 0;
+        const parts = String(configuration.PanModeShortcut || "").split("+");
+        for (let i = 0; i < parts.length; ++i) {
+            const p = parts[i].trim();
+            if (!p) continue;
+            const l = p.toLowerCase();
+            if (l === "meta") mods |= Qt.MetaModifier;
+            else if (l === "ctrl" || l === "control") mods |= Qt.ControlModifier;
+            else if (l === "alt") mods |= Qt.AltModifier;
+            else if (l === "shift") mods |= Qt.ShiftModifier;
+            else {
+                const code = Qt["Key_" + p];
+                if (code === undefined) console.warn("kwin-canvas: unknown key in PanModeShortcut", p); else key = code;
+            }
+        }
+        panModeKey = key;
+        panModeMods = mods;
+    }
+
     function rebuildBindings() {
+        readPanModeChord();
         bindings = {
             apply: keysFor(configuration.KeyApply),
             cancel: keysFor(configuration.KeyCancel),
@@ -440,15 +478,34 @@ KWin.SceneEffect {
     }
 
     property var targetRaw: null
+    // Drag an activity's frame group. With FramesCarryWindows the activity's
+    // windows ride along, so the group moves on the plane as one and nothing
+    // changes on screen at 1:1; off, the frames move over the windows.
     function dragTarget(id, dx, dy) {
         const t = targetOf(id);
         if (!targetRaw || targetRaw.id !== id) targetRaw = { id: id, x: t.x, y: t.y };
         targetRaw.x += dx / zoom; targetRaw.y += dy / zoom;
+        const carry = configuration.FramesCarryWindows !== false;
+        let riding = null;
+        if (carry) {
+            riding = {};
+            for (let i = 0; i < entries.length; ++i) if (entries[i].activity === id) riding[entries[i].window.internalId] = true;
+        }
         const vs = KWin.Workspace.virtualScreenGeometry;
         const box = { x: targetRaw.x + vs.x, y: targetRaw.y + vs.y, width: vs.width, height: vs.height };
-        const s = snapDelta(box, snapCandidates(null, id));
-        t.x = targetRaw.x + s.dx;
-        t.y = targetRaw.y + s.dy;
+        const s = snapDelta(box, snapCandidates(riding, id));
+        const nx = targetRaw.x + s.dx, ny = targetRaw.y + s.dy;
+        if (carry) {
+            const ddx = nx - t.x, ddy = ny - t.y;
+            for (let i = 0; i < entries.length; ++i) {
+                const e = entries[i];
+                if (e.activity !== id) continue;
+                e.x += ddx;
+                e.y += ddy;
+            }
+        }
+        t.x = nx;
+        t.y = ny;
         revision++;
     }
 
@@ -560,8 +617,9 @@ KWin.SceneEffect {
     }
 
     // ---- open / close ------------------------------------------------------
-    function open() {
+    function open(quietMode) {
         if (visible) return;
+        quiet = !!quietMode;
         entryViewX = viewX;
         entryViewY = viewY;
         zoom = 1.0;
@@ -580,7 +638,7 @@ KWin.SceneEffect {
         entryTargets = copyTargets(targets);
         snapshot();
         visible = true;
-        openView();
+        if (!quiet) openView();
     }
 
     // Where the camera starts: fit everything, stay at 1:1, or a zoom
@@ -636,34 +694,66 @@ KWin.SceneEffect {
         zoom = 1.0;
         publishGround();
         visible = false;
+        quiet = false;
+        panMode = false;
+        swiping = false;
+        dropPassthrough();
         if (activate && !activate.deleted) {
             KWin.Workspace.activeWindow = activate;
         }
     }
 
     function cancel() {
+        if (!visible) return;
         targets = copyTargets(entryTargets);
         viewX = entryViewX;
         viewY = entryViewY;
         zoom = 1.0;
         visible = false;
+        quiet = false;
+        panMode = false;
+        swiping = false;
+        dropPassthrough();
     }
 
     function toggle() {
+        if (quiet) { finishSlide(); return; }
         if (visible) commit(null); else open();
     }
 
     // ---- named actions --------------------------------------------------------
 
-    // focusWindow: apply with this window on screen and focused. A window that
-    // overlaps a frame keeps that activity's position; one outside every frame
-    // gets the current activity's active-screen frame centred on it.
-    function focusWindow(entry) {
-        if (activityAt(entry) === null) {
+    // focusWindow: apply with this window focused. The window's activity is
+    // the one whose frame it sits in, else the one it belongs to; the canvas
+    // switches to it if it is not current, and the focus waits for the
+    // switch, since KWin reports it asynchronously. Where its viewport goes
+    // is FocusTarget:
+    //   window   the canvas point under the pointer stays under it at 1:1,
+    //            as if the camera zoomed in there; the frames move as one.
+    //   desktop  a window inside a frame leaves the frame where it is; one
+    //            outside every frame gets its activity's active-screen
+    //            frame centred on it.
+    property var pendingFocus: null
+    function focusWindow(entry, gx, gy) {
+        if (gx === undefined) { const p = KWin.Workspace.cursorPos; gx = p.x; gy = p.y; }
+        const inFrame = activityAt(entry);
+        const a = inFrame !== null ? inFrame : entry.activity;
+        const t = targetOf(a);
+        const desktop = String(configuration.FocusTarget || "window").trim().toLowerCase() === "desktop";
+        if (!desktop) {
+            const c = globalToCanvas(gx, gy);
+            t.x = Math.round(c.x - gx);
+            t.y = Math.round(c.y - gy);
+        } else if (inFrame === null) {
             const g = KWin.Workspace.activeScreen.geometry;
-            const t = targetOf(currentActivity);
-            t.x = entry.x + entry.width / 2 - (g.x + g.width / 2);
-            t.y = entry.y + entry.height / 2 - (g.y + g.height / 2);
+            t.x = Math.round(entry.x + entry.width / 2 - (g.x + g.width / 2));
+            t.y = Math.round(entry.y + entry.height / 2 - (g.y + g.height / 2));
+        }
+        if (a && a !== currentActivity) {
+            pendingFocus = entry.window;
+            KWin.Workspace.currentActivity = a;
+            commit(null);
+            return;
         }
         commit(entry.window);
     }
@@ -983,6 +1073,53 @@ KWin.SceneEffect {
         if (syncEntry(entries[index])) revision++;
     }
 
+    // ---- pass-through plugin -------------------------------------------------
+    KWin.DBusCall {
+        id: probeCall
+        service: "org.kde.KWin"
+        path: "/KWinCanvas"
+        dbusInterface: "org.kde.kwin.canvas.Passthrough"
+        method: "probe"
+        onFinished: (ret) => effect.passthroughProbed(String(ret[0]))
+    }
+    KWin.DBusCall {
+        id: activeCall
+        service: "org.kde.KWin"
+        path: "/KWinCanvas"
+        dbusInterface: "org.kde.kwin.canvas.Passthrough"
+        method: "setActive"
+    }
+    KWin.DBusCall {
+        id: cameraCall
+        service: "org.kde.KWin"
+        path: "/KWinCanvas"
+        dbusInterface: "org.kde.kwin.canvas.Passthrough"
+        method: "setCamera"
+    }
+    // The plugin answered: if pan mode is still on, switch it on and give it the camera.
+    function passthroughProbed(version) {
+        passthroughVersion = version;
+        if (!panMode || passthroughLive) return;
+        passthroughLive = true;
+        publishCamera();
+        activeCall.arguments = [true];
+        activeCall.call();
+    }
+    function publishCamera() {
+        if (!passthroughLive) return;
+        cameraCall.arguments = [viewX, viewY, zoom, currentActivity, JSON.stringify(targets)];
+        cameraCall.call();
+    }
+    function dropPassthrough() {
+        if (!passthroughLive) return;
+        passthroughLive = false;
+        activeCall.arguments = [false];
+        activeCall.call();
+    }
+    onViewXChanged: if (passthroughLive) Qt.callLater(publishCamera)
+    onViewYChanged: if (passthroughLive) Qt.callLater(publishCamera)
+    onZoomChanged: if (passthroughLive) Qt.callLater(publishCamera)
+
     // ---- ground publication ------------------------------------------------
     KWin.DBusCall {
         id: groundCall
@@ -1006,12 +1143,21 @@ KWin.SceneEffect {
     }
 
     // ---- 1:1 behaviours (effect closed) ------------------------------------
+    // A window that rides with this activity's viewport: managed, not part of
+    // the shell, on this activity or on every activity. Minimized windows and
+    // other desktops' windows count, so the plane stays whole under a pan.
+    function isViewportWindow(w) {
+        if (!w || w.deleted || !w.managed) return false;
+        if (w.desktopWindow || w.dock || w.popupWindow || w.specialWindow) return false;
+        return onActivity(w, currentActivity);
+    }
+
     // Shift the current activity's viewport: move its windows and its target.
     function shiftAll(dx, dy) {
         const all = KWin.Workspace.stackingOrder;
         for (let i = 0; i < all.length; ++i) {
             const w = all[i];
-            if (!isCanvasWindow(w, false)) continue;
+            if (!isViewportWindow(w)) continue;
             const g = w.frameGeometry;
             w.frameGeometry = Qt.rect(g.x + dx, g.y + dy, g.width, g.height);
         }
@@ -1023,6 +1169,219 @@ KWin.SceneEffect {
         publishGround();
     }
 
+    // ---- the slide: an animated pan at 1:1 ---------------------------------
+    // Open quietly at 1:1, where the thumbnails and the ground are pixel-
+    // identical to the real screen, move the camera, and end with shiftAll:
+    // the desktop slides, and this activity's windows are written once at the
+    // end. Nothing changes activity, and only this activity's windows are
+    // drawn, so what slides is what 1:1 shows. A slide that arrives mid-slide
+    // extends the destination. dx, dy are canvas pixels the camera moves by;
+    // the windows move the other way.
+    property real slideToX: 0
+    property real slideToY: 0
+    readonly property int panDuration: Math.max(0, Number(configuration.PanDuration) || 0)
+
+    // One pan step in screen pixels: a fraction of the active screen.
+    function panStep() {
+        const f = Math.max(0.05, Math.min(1, Number(configuration.PanStep) || 0.5));
+        const g = KWin.Workspace.activeScreen.geometry;
+        return Qt.point(Math.round(g.width * f), Math.round(g.height * f));
+    }
+
+    function slide(dx, dy) {
+        if (!beginSlide()) return;
+        if (!slideAnim.running) { slideToX = viewX; slideToY = viewY; }
+        slideToX += dx;
+        slideToY += dy;
+        slideAnim.restart();
+    }
+
+    // Open quietly if closed. False while the real canvas is open.
+    function beginSlide() {
+        if (visible && !quiet) return false;
+        if (!visible) {
+            open(true);
+            slideToX = viewX;
+            slideToY = viewY;
+        }
+        return true;
+    }
+
+    // The animation has arrived: the destination becomes this activity's
+    // viewport. Every shown window is written once, where it sits on the
+    // plane relative to its activity's frames, which covers both the ride and
+    // any drag on the plane while quiet (pan mode with pass-through leaves
+    // the title bars to the canvas). Writing a geometry makes its entry absorb
+    // the move as a delta, so nothing may read an entry after writing it.
+    // Windows the canvas does not show ride with the viewport as under a
+    // commit. All of it happens while the thumbnails still cover the screen.
+    function endSlide() {
+        if (!quiet) return;
+        swiping = false;
+        panMode = false;
+        dropPassthrough();
+        zoom = 1.0;
+        const dx = Math.round(slideToX - entryViewX), dy = Math.round(slideToY - entryViewY);
+        targets = copyTargets(entryTargets);
+        const cur = targetOf(currentActivity);
+        cur.x += dx;
+        cur.y += dy;
+        const seen = {};
+        for (let i = 0; i < entries.length; ++i) {
+            const e = entries[i];
+            if (e.window.deleted) continue;
+            seen[e.window.internalId] = true;
+            const t = targetOf(e.activity);
+            const fx = Math.round(e.x - t.x), fy = Math.round(e.y - t.y);
+            const g = e.window.frameGeometry;
+            if (g.x !== fx || g.y !== fy) e.window.frameGeometry = Qt.rect(fx, fy, g.width, g.height);
+        }
+        if (dx !== 0 || dy !== 0) {
+            const all = KWin.Workspace.stackingOrder;
+            for (let i = 0; i < all.length; ++i) {
+                const w = all[i];
+                if (seen[w.internalId] || !isViewportWindow(w)) continue;
+                const g = w.frameGeometry;
+                w.frameGeometry = Qt.rect(g.x - dx, g.y - dy, g.width, g.height);
+            }
+        }
+        viewX = cur.x;
+        viewY = cur.y;
+        publishGround();
+        visible = false;
+        quiet = false;
+    }
+
+    // Jump to the destination and settle now (another action wants the canvas).
+    function finishSlide() {
+        if (!quiet) return;
+        slideAnim.stop();
+        settleAnim.stop();
+        if (panMode) settleTarget();
+        endSlide();
+    }
+
+    ParallelAnimation {
+        id: slideAnim
+        NumberAnimation { target: effect; property: "viewX"; to: effect.slideToX; duration: effect.panDuration; easing.type: Easing.OutCubic }
+        NumberAnimation { target: effect; property: "viewY"; to: effect.slideToY; duration: effect.panDuration; easing.type: Easing.OutCubic }
+        onFinished: effect.endSlide()
+    }
+    // Pan mode settles with the zoom: view and zoom animate to 1:1 together.
+    ParallelAnimation {
+        id: settleAnim
+        NumberAnimation { target: effect; property: "viewX"; to: effect.slideToX; duration: effect.panDuration; easing.type: Easing.OutCubic }
+        NumberAnimation { target: effect; property: "viewY"; to: effect.slideToY; duration: effect.panDuration; easing.type: Easing.OutCubic }
+        NumberAnimation { target: effect; property: "zoom";  to: 1;               duration: effect.panDuration; easing.type: Easing.OutCubic }
+        onFinished: effect.endSlide()
+    }
+
+    // Pan by one step in a direction (dx, dy in {-1, 0, 1}): the camera moves
+    // that way. Closed, it is a slide; open, the camera just moves.
+    function panStepBy(dx, dy) {
+        const st = panStep();
+        if (canvasOpen) { panBy(-dx * st.x, -dy * st.y); return; }
+        slide(dx * st.x, dy * st.y);
+    }
+
+    // Touchpad swipe: the desktop follows the fingers, then settles one step
+    // in the swipe's direction, or slides back if the swipe is cancelled.
+    // The fingers move the content, so the camera goes the other way.
+    property real swipeBaseX: 0
+    property real swipeBaseY: 0
+    property bool swiping: false
+    function swipeProgress(dx, dy, p) {
+        if (!swiping) {
+            if (p <= 0) return;
+            if (!beginSlide()) return;
+            slideAnim.stop();
+            swipeBaseX = viewX;
+            swipeBaseY = viewY;
+            swiping = true;
+        }
+        const st = panStep();
+        p = Math.max(0, Math.min(1, p));
+        viewX = swipeBaseX - dx * st.x * p;
+        viewY = swipeBaseY - dy * st.y * p;
+    }
+    function swipeEnd(dx, dy, ok) {
+        if (!swiping) return;
+        swiping = false;
+        const st = panStep();
+        slideToX = ok ? swipeBaseX - dx * st.x : swipeBaseX;
+        slideToY = ok ? swipeBaseY - dy * st.y : swipeBaseY;
+        slideAnim.restart();
+    }
+
+    // The finger count is copied out of the configuration so the handlers
+    // are re-registered only when it changes, not on every reconfigure.
+    property int swipeFingers: 0
+    function readSwipeFingers() {
+        const n = Number(configuration.PanSwipeFingers) || 0;
+        if (n !== swipeFingers) swipeFingers = n;
+    }
+    Instantiator {
+        // Four handlers, one per direction, for the configured finger count.
+        model: {
+            const n = effect.swipeFingers;
+            if (n < 3) return [];
+            return [{ f: n, d: KWin.SwipeGestureHandler.Left,  dx: -1, dy: 0 },
+                    { f: n, d: KWin.SwipeGestureHandler.Right, dx: 1,  dy: 0 },
+                    { f: n, d: KWin.SwipeGestureHandler.Up,    dx: 0,  dy: -1 },
+                    { f: n, d: KWin.SwipeGestureHandler.Down,  dx: 0,  dy: 1 }];
+        }
+        delegate: KWin.SwipeGestureHandler {
+            required property var modelData
+            direction: modelData.d
+            fingerCount: modelData.f
+            deviceType: KWin.SwipeGestureHandler.Touchpad
+            onProgressChanged: effect.swipeProgress(modelData.dx, modelData.dy, progress)
+            onActivated: effect.swipeEnd(modelData.dx, modelData.dy, true)
+            onCancelled: effect.swipeEnd(modelData.dx, modelData.dy, false)
+        }
+    }
+
+    // ---- pan mode: hold the chord, drag the desktop ------------------------
+    // The chord opens quiet with input on; every left or middle drag pulls
+    // the view; releasing any key of the chord settles where it landed.
+    // Escape slides back and writes nothing. The chord re-fires on key
+    // autorepeat while it is held, so a second activation is ignored.
+    function enterPanMode() {
+        if (panMode || settleAnim.running) return;
+        if (!beginSlide()) return;
+        slideAnim.stop();
+        panMode = true;
+        if (passthroughWanted) probeCall.call();
+    }
+    // Where 1:1 lands when pan mode settles: the canvas point under the
+    // anchor (the pointer) stays under it, as a zoom back to 1 there would.
+    function settleTarget(ax, ay) {
+        if (ax === undefined) { const p = KWin.Workspace.cursorPos; ax = p.x; ay = p.y; }
+        const c = globalToCanvas(ax, ay);
+        slideToX = c.x - ax;
+        slideToY = c.y - ay;
+    }
+    function endPanMode(ax, ay) {
+        if (!panMode) return;
+        slideAnim.stop();
+        settleTarget(ax, ay);
+        settleAnim.restart();
+    }
+    function cancelPanMode() {
+        if (!panMode) return;
+        panMode = false;
+        dropPassthrough();
+        slideToX = entryViewX;
+        slideToY = entryViewY;
+        settleAnim.restart();
+    }
+    // A key release while in pan mode: true if it belongs to the chord.
+    function panModeReleased(key, mod) {
+        if (!panMode) return false;
+        if (panModeKey && key === panModeKey) return true;
+        return mod !== 0 && (mod & panModeMods) !== 0;
+    }
+
     function intersects(a, b) {
         return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
     }
@@ -1030,7 +1389,9 @@ KWin.SceneEffect {
     Connections {
         target: KWin.Workspace
         function onWindowActivated(w) {
-            if (effect.visible || !effect.configuration.FollowActivation) return;
+            // Open: a raise (pass-through clicks) restacks the thumbnails.
+            if (effect.visible) { Qt.callLater(effect.resync); return; }
+            if (!effect.configuration.FollowActivation) return;
             if (!effect.isCanvasWindow(w, false)) return;
             const g = w.frameGeometry;
             if (effect.intersects(g, KWin.Workspace.virtualScreenGeometry)) return;
@@ -1050,6 +1411,9 @@ KWin.SceneEffect {
             effect.viewX = t.x;
             effect.viewY = t.y;
             effect.publishGround();
+            const w = effect.pendingFocus;
+            effect.pendingFocus = null;
+            if (w && !w.deleted) KWin.Workspace.activeWindow = w;
         }
         // Another desktop's windows are a different set on the same plane.
         function onCurrentDesktopChanged() { if (effect.visible) Qt.callLater(effect.resync); }
@@ -1067,6 +1431,7 @@ KWin.SceneEffect {
         text: "Canvas: return this activity to the origin"
         sequence: effect.configuration.HomeShortcut
         onActivated: {
+            if (effect.quiet) effect.finishSlide();
             if (effect.visible) { effect.home(); return; }
             effect.open();
             const t = effect.targetOf(effect.currentActivity);
@@ -1078,12 +1443,23 @@ KWin.SceneEffect {
     // The in-canvas actions as global shortcuts too, with no default chord,
     // so they can be bound in System Settings > Shortcuts > KWin. They act
     // only while the canvas is open.
-    KWin.ShortcutHandler { name: "Canvas Apply";    text: "Canvas: apply and close";           sequence: ""; onActivated: if (effect.visible) effect.commit(null) }
-    KWin.ShortcutHandler { name: "Canvas Cancel";   text: "Canvas: cancel";                    sequence: ""; onActivated: if (effect.visible) effect.cancel() }
-    KWin.ShortcutHandler { name: "Canvas Fit";      text: "Canvas: zoom to fit";               sequence: ""; onActivated: if (effect.visible) effect.zoomExtents() }
-    KWin.ShortcutHandler { name: "Canvas Origin";   text: "Canvas: camera to the origin";      sequence: ""; onActivated: if (effect.visible) effect.origin() }
-    KWin.ShortcutHandler { name: "Canvas Zoom In";  text: "Canvas: zoom in";                   sequence: ""; onActivated: if (effect.visible) effect.setZoom(effect.zoom * effect.zoomStep, KWin.Workspace.cursorPos) }
-    KWin.ShortcutHandler { name: "Canvas Zoom Out"; text: "Canvas: zoom out";                  sequence: ""; onActivated: if (effect.visible) effect.setZoom(effect.zoom / effect.zoomStep, KWin.Workspace.cursorPos) }
+    KWin.ShortcutHandler { name: "Canvas Apply";    text: "Canvas: apply and close";           sequence: ""; onActivated: if (effect.canvasOpen) effect.commit(null) }
+    KWin.ShortcutHandler { name: "Canvas Cancel";   text: "Canvas: cancel";                    sequence: ""; onActivated: if (effect.canvasOpen) effect.cancel() }
+    KWin.ShortcutHandler { name: "Canvas Fit";      text: "Canvas: zoom to fit";               sequence: ""; onActivated: if (effect.canvasOpen) effect.zoomExtents() }
+    KWin.ShortcutHandler { name: "Canvas Origin";   text: "Canvas: camera to the origin";      sequence: ""; onActivated: if (effect.canvasOpen) effect.origin() }
+    KWin.ShortcutHandler { name: "Canvas Zoom In";  text: "Canvas: zoom in";                   sequence: ""; onActivated: if (effect.canvasOpen) effect.setZoom(effect.zoom * effect.zoomStep, KWin.Workspace.cursorPos) }
+    KWin.ShortcutHandler { name: "Canvas Zoom Out"; text: "Canvas: zoom out";                  sequence: ""; onActivated: if (effect.canvasOpen) effect.setZoom(effect.zoom / effect.zoomStep, KWin.Workspace.cursorPos) }
+    KWin.ShortcutHandler {
+        name: "Canvas Pan Mode"
+        text: "Canvas: hold to pan the desktop with the mouse"
+        sequence: effect.configuration.PanModeShortcut
+        onActivated: effect.enterPanMode()
+    }
+    // Pan at 1:1 by one step (a slide), or move the open canvas's camera.
+    KWin.ShortcutHandler { name: "Canvas Pan Left";  text: "Canvas: pan left";  sequence: effect.configuration.PanLeftShortcut;  onActivated: effect.panStepBy(-1, 0) }
+    KWin.ShortcutHandler { name: "Canvas Pan Right"; text: "Canvas: pan right"; sequence: effect.configuration.PanRightShortcut; onActivated: effect.panStepBy(1, 0) }
+    KWin.ShortcutHandler { name: "Canvas Pan Up";    text: "Canvas: pan up";    sequence: effect.configuration.PanUpShortcut;    onActivated: effect.panStepBy(0, -1) }
+    KWin.ShortcutHandler { name: "Canvas Pan Down";  text: "Canvas: pan down";  sequence: effect.configuration.PanDownShortcut;  onActivated: effect.panStepBy(0, 1) }
 
     // ---- screen edges ------------------------------------------------------
     // The Screen Edges settings page lists this effect (X-KWin-Border-Activate)
@@ -1129,6 +1505,22 @@ KWin.SceneEffect {
             break;
         }
         case "shift": shiftAll(Number(a[1]), Number(a[2])); break;
+        case "slide": slide(Number(a[1]), Number(a[2])); break;
+        case "panmode": {
+            // panmode | panmode end [X Y] | panmode cancel
+            if (a[1] === "end") endPanMode(a.length >= 4 ? Number(a[2]) : undefined, a.length >= 4 ? Number(a[3]) : undefined);
+            else if (a[1] === "cancel") cancelPanMode();
+            else enterPanMode();
+            break;
+        }
+        case "panstep": panStepBy(Number(a[1]), Number(a[2])); break;
+        case "swipe": {
+            // swipe DX DY PROGRESS | swipe DX DY end | swipe DX DY cancel
+            if (a[3] === "end") swipeEnd(Number(a[1]), Number(a[2]), true);
+            else if (a[3] === "cancel") swipeEnd(Number(a[1]), Number(a[2]), false);
+            else swipeProgress(Number(a[1]), Number(a[2]), Number(a[3]));
+            break;
+        }
         case "drag": beginDrag(Number(a[1])); dragEntry(Number(a[1]), Number(a[2]), Number(a[3])); break;
         case "resize": requestSize(Number(a[1]), Number(a[2]), Number(a[3]), false, false); break;
         case "resetview": {
@@ -1222,8 +1614,9 @@ KWin.SceneEffect {
     }
 
     function logState() {
-        let s = "kwin-canvas state visible=" + visible + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") activity=" + labelOf(currentActivity) + " entries=" + entries.length
-            + " snap=" + (snapEdges ? "E" : "-") + (snapCorners ? "C" : "-") + (snapGrid ? "G" : "-");
+        let s = "kwin-canvas state visible=" + visible + (quiet ? (panMode ? " panmode" : " quiet") : "") + (passthroughLive ? " passthrough" : "") + " zoom=" + zoom.toFixed(4) + " view=(" + viewX.toFixed(1) + "," + viewY.toFixed(1) + ") activity=" + labelOf(currentActivity) + " entries=" + entries.length
+            + " snap=" + (snapEdges ? "E" : "-") + (snapCorners ? "C" : "-") + (snapGrid ? "G" : "-")
+            + " active=" + (KWin.Workspace.activeWindow ? JSON.stringify(KWin.Workspace.activeWindow.caption) : "none");
         const ids = activityIds, screens = KWin.Workspace.screens;
         for (let i = 0; i < ids.length; ++i) {
             const t = peekTarget(ids[i]);
@@ -1241,6 +1634,7 @@ KWin.SceneEffect {
 
     onConfigurationChanged: {
         rebuildBindings();
+        readSwipeFingers();
         const seq = configuration.DebugSeq;
         if (seq !== lastDebugSeq) {
             lastDebugSeq = seq;
@@ -1251,6 +1645,7 @@ KWin.SceneEffect {
 
     Component.onCompleted: {
         rebuildBindings();
+        readSwipeFingers();
         loadHiddenFrames();
         refreshActivities();
         lastDebugSeq = configuration.DebugSeq;
@@ -1281,7 +1676,7 @@ KWin.SceneEffect {
 
         HoverHandler {
             id: gripHover
-            enabled: !grip.viewItem.spaceHeld
+            enabled: !grip.viewItem.panOnly
             cursorShape: gripDrag.active && grip.cursor === Qt.ArrowCursor ? Qt.ClosedHandCursor : grip.cursor
             onHoveredChanged: grip.viewItem.hoverCount += hovered ? 1 : -1
             Component.onDestruction: if (hovered) grip.viewItem.hoverCount -= 1
@@ -1289,7 +1684,7 @@ KWin.SceneEffect {
         DragHandler {
             id: gripDrag
             target: null
-            enabled: !grip.viewItem.spaceHeld
+            enabled: !grip.viewItem.panOnly
             acceptedButtons: Qt.LeftButton
             property point last: Qt.point(0, 0)
             onActiveChanged: {
@@ -1304,7 +1699,7 @@ KWin.SceneEffect {
         }
         TapHandler {
             id: gripTap
-            enabled: grip.tappable && !grip.viewItem.spaceHeld
+            enabled: grip.tappable && !grip.viewItem.panOnly
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
             onTapped: (eventPoint, button) => grip.tapped(tapCount, point.modifiers, button)
         }
@@ -1409,6 +1804,11 @@ KWin.SceneEffect {
         // on one of them acts on it instead of racing the pan.
         property int hoverCount: 0
         readonly property bool overControl: hoverCount > 0
+        // Space held, or pan mode without pass-through: every grip and button
+        // stands down and drags pan. With pass-through live the plugin takes
+        // the client areas, so the grips see only title bars and edges.
+        readonly property bool panOnly: spaceHeld || (effect.panMode && !effect.passthroughLive)
+        enabled: !effect.quiet || effect.panMode
         focus: true
         Connections {
             target: effect
@@ -1432,7 +1832,7 @@ KWin.SceneEffect {
         // left-drag anywhere (Space disables every Grip and IconButton).
         // Ground click: drop the selection.
         TapHandler {
-            enabled: !view.spaceHeld && !view.overControl
+            enabled: !view.panOnly && !view.overControl
             acceptedButtons: Qt.LeftButton
             onTapped: (eventPoint, button) => { if ((point.modifiers & effect.marqueeModifiers()) === 0) effect.clearSelection(); }
         }
@@ -1442,7 +1842,7 @@ KWin.SceneEffect {
             id: marquee
             target: null
             // Latched while active: crossing a window mid-drag must not end the gesture.
-            enabled: active || (!view.spaceHeld && !view.overControl && effect.marqueeModifiers() !== 0 && (view.heldModifiers & effect.marqueeModifiers()) !== 0)
+            enabled: active || (!view.panOnly && !view.overControl && effect.marqueeModifiers() !== 0 && (view.heldModifiers & effect.marqueeModifiers()) !== 0)
             acceptedButtons: Qt.LeftButton
             onActiveChanged: {
                 if (active) {
@@ -1479,10 +1879,13 @@ KWin.SceneEffect {
             id: panDrag
             target: null
             enabled: active || !marquee.enabled
-            acceptedButtons: (active || view.spaceHeld || !view.overControl) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
-            cursorShape: active ? Qt.ClosedHandCursor : (view.spaceHeld ? Qt.OpenHandCursor : Qt.ArrowCursor)
+            acceptedButtons: (active || view.panOnly || !view.overControl) ? (Qt.LeftButton | Qt.MiddleButton) : Qt.MiddleButton
+            cursorShape: active ? Qt.ClosedHandCursor : (view.panOnly ? Qt.OpenHandCursor : Qt.ArrowCursor)
             property point last: Qt.point(0, 0)
-            onActiveChanged: last = Qt.point(0, 0)
+            onActiveChanged: {
+                last = Qt.point(0, 0);
+                if (active && effect.panMode) slideAnim.stop();
+            }
             onActiveTranslationChanged: {
                 const t = activeTranslation;
                 effect.panBy(t.x - last.x, t.y - last.y);
@@ -1490,7 +1893,7 @@ KWin.SceneEffect {
             }
         }
 
-        // Zoom at the cursor.
+        // Zoom at the cursor. In pan mode too: release settles back to 1:1.
         WheelHandler {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             onWheel: (event) => {
@@ -1522,7 +1925,7 @@ KWin.SceneEffect {
                     id: frame
                     required property var modelData
                     readonly property rect og: modelData.geometry
-                    visible: !effect.isHidden(activityFrames.activity, modelData)
+                    visible: (!effect.quiet || effect.quietPlane) && !effect.isHidden(activityFrames.activity, modelData)
                     x: { effect.revision; return (effect.peekTarget(activityFrames.activity).x + og.x - effect.viewX) * effect.zoom - view.sg.x; }
                     y: { effect.revision; return (effect.peekTarget(activityFrames.activity).y + og.y - effect.viewY) * effect.zoom - view.sg.y; }
                     width: og.width * effect.zoom
@@ -1557,7 +1960,7 @@ KWin.SceneEffect {
                     // A gesture on the frame's own area (windows sit above and
                     // take their own taps).
                     TapHandler {
-                        enabled: !view.spaceHeld
+                        enabled: !view.panOnly
                         acceptedButtons: Qt.LeftButton
                         onTapped: effect.frameGesture(activityFrames.activity, tapCount, point.modifiers)
                     }
@@ -1596,6 +1999,7 @@ KWin.SceneEffect {
                 y: { effect.revision; return (effect.entries[index].y - effect.viewY) * effect.zoom - view.sg.y; }
                 width: { effect.revision; return effect.entries[index].width * effect.zoom; }
                 height: { effect.revision; return effect.entries[index].height * effect.zoom; }
+                visible: !effect.quiet || effect.quietPlane || entry.activity === effect.currentActivity
                 z: 1000 + index
 
                 KWin.WindowThumbnail {
@@ -1606,6 +2010,7 @@ KWin.SceneEffect {
                 Rectangle {
                     anchors.fill: parent
                     color: "transparent"
+                    visible: !effect.quiet
                     readonly property bool sel: { effect.selectionRev; return effect.isSelected(thumb.entry); }
                     border.width: sel ? 3 : (body.hovered || body.active ? 2 : 1)
                     border.color: sel ? Kirigami.Theme.highlightColor
@@ -1694,6 +2099,7 @@ KWin.SceneEffect {
                 model: KWin.Workspace.screens
                 delegate: FrameTag {
                     required property var modelData
+                    visible: !effect.quiet
                     viewItem: view
                     activity: activityTags.modelData
                     activityIndex: activityTags.index
@@ -1719,6 +2125,13 @@ KWin.SceneEffect {
             const k = event.key;
             const m = view.modifierOf(k);
             if (m) { view.heldModifiers |= m; return; }
+            if (effect.panMode) {
+                // Escape slides back, apply settles, the rest is swallowed.
+                if (effect.bound("cancel", k)) effect.cancelPanMode();
+                else if (effect.bound("apply", k)) effect.endPanMode();
+                event.accepted = true;
+                return;
+            }
             if (effect.bound("pan", k)) {
                 if (!event.isAutoRepeat) view.spaceHeld = true;
             } else if (effect.bound("cancel", k)) {
@@ -1743,6 +2156,12 @@ KWin.SceneEffect {
 
         Keys.onReleased: (event) => {
             const m = view.modifierOf(event.key);
+            if (!event.isAutoRepeat && effect.panModeReleased(event.key, m)) {
+                if (m) view.heldModifiers &= ~m;
+                effect.endPanMode();
+                event.accepted = true;
+                return;
+            }
             if (m) { view.heldModifiers &= ~m; return; }
             if (effect.bound("pan", event.key) && !event.isAutoRepeat) {
                 view.spaceHeld = false;
@@ -1808,7 +2227,7 @@ KWin.SceneEffect {
         Rectangle {
             id: hud
             z: 100000
-            visible: view.screen === effect.primaryScreen
+            visible: view.screen === effect.primaryScreen && !effect.quiet
             readonly property string pos: String(effect.configuration.HudPosition || "Top").toLowerCase()
             readonly property bool atTop: pos.indexOf("top") === 0 || pos === "left" || pos === "right" ? pos.indexOf("bottom") !== 0 : false
             readonly property bool atBottom: pos.indexOf("bottom") === 0
@@ -1970,7 +2389,7 @@ KWin.SceneEffect {
                 K { text: effect.gestureLabel(effect.configuration.MouseSelectAdd) + " window, or +drag ground" } V { text: "add to the selection, or select by rectangle" }
                 K { text: effect.gestureLabel(effect.configuration.MouseSelectToggle) + " window" }  V { text: "toggle its selection; a selected window drags the whole selection" }
                 K { text: effect.gestureLabel(effect.configuration.MouseContextMenu) + " window" }   V { text: "arrange the selection: horizontal, vertical, tile, grid, cascade" }
-                K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: "apply, focused on it" }
+                K { text: effect.gestureLabel(effect.configuration.MouseFocusWindow) + " window" }   V { text: effect.configuration.FocusTarget === "desktop" ? "apply, focused on it; in another activity's frame, go there" : "apply with that point under the pointer, focused on it; in another activity's frame, go there" }
                 K { text: effect.gestureLabel(effect.configuration.MouseZoomToActivity) + " frame" }  V { text: "zoom to that activity" }
                 K { text: effect.gestureLabel(effect.configuration.MouseGotoActivity) + " frame" }    V { text: "apply with that activity current" }
                 K { text: effect.gestureLabel(effect.configuration.MouseNewActivityAt) + " window outside frames" } V { text: "new activity centred on it" }
