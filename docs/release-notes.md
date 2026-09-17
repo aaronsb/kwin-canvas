@@ -1,3 +1,39 @@
+0.4.0 is the overworld: one chord out and back in, and the open canvas is
+a live desktop.
+
+- Two places. A location is an activity's screens at 1:1 with the canvas
+  closed: stock Plasma, nothing of ours running, so games and fullscreen
+  apps get KWin's native path. The overworld is the open canvas: every
+  window live on the plane, the frames with their wallpaper, tags and the
+  toolbar.
+- One chord steps out and back in. Toggle Canvas now defaults to
+  Meta+Ctrl+Alt+Space (was Meta+Space); KDE keeps an existing binding in
+  kglobalshortcutsrc, so rebind by hand if you want the new one. Stepping
+  out opens at the current viewport at 1:1 (`OpenZoom` default is now `1`;
+  `fit` is still there). Stepping in enters the location under the screen
+  centre, switching activity if that is another activity's frame, and
+  writes the viewport where the camera is. Double-click a window's title
+  bar or a frame to enter that location.
+- Pass-through is live whenever the canvas is open, with the plugin loaded:
+  pointer over a window's client area goes to the window, every key goes to
+  the focused window, Esc included. Title bars, edges, frames, tags, ground
+  and toolbar stay the canvas's; select windows from the title bar. Setting
+  `Passthrough`, default on.
+- Pan mode is gone. The slide stays: pan chords, the touchpad swipe,
+  `PanStep`, `PanDuration` and activation-follow move the viewport within a
+  location.
+- Toolbar: Apply is now Enter; Cancel is back to where you were, nothing
+  moved.
+- `kwin-canvas`, a terminal CLI: `exit`, `cancel`, `open`, `toggle`,
+  `status`. Works from a virtual terminal, the fallback when the chord does
+  not reach the open canvas, and the way to toggle from a script or start
+  in the overworld at login (`open` waits for the effect; an autostart
+  entry is in docs/install.md, `AutoActivate` is the other route). `make
+  install` puts it in `~/.local/bin`; the package in `/usr/bin`
+  (`qt6-tools` is now a dependency).
+- A Plasma applet, `kwin-canvas-toggle`: a panel button that fires the
+  Toggle Canvas chord.
+
 0.3.1 fixes where the pass-through plugin installs: Qt 6's plugin directory
 (`/usr/lib/qt6/plugins/kwin/plugins`), which KWin searches; 0.3.0's package
 put it under Qt 5's. Nothing else changed.
